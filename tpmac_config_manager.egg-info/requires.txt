@@ -1,0 +1,1 @@
+dls-pmaclib@ git+https://github.com/dls-controls/dls-pmac-lib.git@master

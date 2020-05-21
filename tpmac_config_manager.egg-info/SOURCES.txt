@@ -1,0 +1,9 @@
+README.rst
+setup.py
+tpmac_config_manager/__init__.py
+tpmac_config_manager/quicktest.py
+tpmac_config_manager.egg-info/PKG-INFO
+tpmac_config_manager.egg-info/SOURCES.txt
+tpmac_config_manager.egg-info/dependency_links.txt
+tpmac_config_manager.egg-info/requires.txt
+tpmac_config_manager.egg-info/top_level.txt
