@@ -56,7 +56,7 @@ Path(output_dir_path).mkdir(parents=True, exist_ok=True)
 pmc_source_parsed_file = os.path.join(output_dir_path, 'source.parsed.pmc')
 pmac_cs = '?'
 pmac_module = 'NONE'
-output_basename = 'pmac1_CS{}-{}.{}.PMA'
+output_basename = 't_{}_CS{}-{}.{}.PMA'
 
 resevered_words = r'[\>,\<,\!,\(,\),=,+,\-,*,/,\n]'
 src_shorthand_replace_list = [
@@ -67,6 +67,11 @@ src_shorthand_replace_list = [
                 ,('WHILE', 'WHILE'), ('AND', 'AND'), ('OR', 'OR')
                 #, (r'\)AND',r')\nAND'),(r'\)OR',r')\nOR'), (r'\)ENDW',r')\nENDW'), (r'(?<=\d)WHILE',r'\nWHILE')
                 ]
+
+cs_modules =[
+    'INVERSE'
+    , 'FORWARD'
+]
 
 if args.verbose > 0:
     print(p_line_ + 'reading from \n {} \n parsing and saving to \n {} ...'.format(src_full_path, pmc_source_parsed_file), end='\n')
@@ -118,7 +123,10 @@ for code_line in pmc_parser.output:  # type: str
 
             if module_full_name is None:
                 module_first_name = code_line[5:].replace(' ', '')
-                module_full_name = '{}_&{}_{}'.format(str(code_order), str(_cs_number), module_first_name)
+                if module_first_name in cs_modules:
+                    module_full_name = '{}_&{}_{}'.format(str(code_order), str(_cs_number), module_first_name)
+                else:
+                    module_full_name = '{}_&{}_{}'.format(str(code_order), str(0), module_first_name)
                 code_order += 1
 
                 #reset module code holder
@@ -190,8 +198,10 @@ for code_line in pmc_parser.output:  # type: str
                 modules_dict[module_full_name]['code'] = source_module_code
                 modules_dict[module_full_name]['md5'] = source_module_md5
 
-                source_module_filename = os.path.join(output_dir_path, output_basename.format(_cs_number, module_first_name, 'src'))
-
+                _CS = re.findall(r'(?<=&).(?=_)', module_full_name)[0]
+                source_module_filename = os.path.join(output_dir_path, \
+                    output_basename.format(pmac_ip_address.replace('.','-'), _CS, module_first_name, 'src'))
+                
                 if args.verbose > 0:
                     print(p_line_ + 'saving source code to file {} ...'.format(source_module_filename), end='\n')
 
@@ -241,14 +251,14 @@ for module_full_name in modules_dict:
 
     else:
         # upload module code
-        _CS = re.findall(r'(?<=&)\d', module_full_name)[-1]
+        _CS = re.findall(r'(?<=&).(?=_)', module_full_name)[0]
         # last one isa the pmac module name, because _trailing is already excluded
         module_first_name = module_full_name.split('_')[-1]
 
         if args.verbose > 0:
             print(p_line_ + 'uploading CS {} module {} ... '.format(_CS, module_first_name), end='')
         _command_str = 'LIST {}'.format(module_first_name)
-        if _cs_number > 0:
+        if (int(_CS) > 0):
             _command_str = '&{} '.format(_CS) + _command_str
 
         uploaded_module_code, status = pmac1.sendCommand(_command_str)
@@ -257,7 +267,8 @@ for module_full_name in modules_dict:
         _upl = re.sub(r'RET\s.*', '', uploaded_module_lines, flags=re.IGNORECASE)
         uploaded_module_code = _upl
         uploaded_module_md5 = md5(uploaded_module_code.encode('utf-8')).hexdigest()
-        uploaded_module_filename = os.path.join(output_dir_path, output_basename.format(_CS, module_first_name, 'upl'))
+        uploaded_module_filename = os.path.join(output_dir_path, \
+            output_basename.format(pmac_ip_address.replace('.','-'),_CS, module_first_name, 'upl'))
 
         if args.verbose > 3:
             print(p_line_ + '\n saving uploaded code to file {} ...'.format(uploaded_module_filename), end='\n')
