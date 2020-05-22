@@ -11,7 +11,6 @@ import datetime
 import os
 from pathlib import Path
 import difflib
-# import myUtils 
 from argparse import ArgumentParser
 from hashlib import md5, sha1
 
