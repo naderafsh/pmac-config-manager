@@ -1,0 +1,110 @@
+;###########################################################
+;;  PLC6_amplifier_initialise.pmc 
+;; branched off DLS pmacUtil
+;; modified by Nader.Afshar@synchrotron.org.au 
+;;   
+;; This PLC initializes the amplifiers #1 to #8 based on P601..608 settings
+;; P617 - 624 vars are used for fine phasing of servos by another PLC. 
+;; Default value for steppers is set to -1 (no phasing required).
+;; ----------------------
+;; Added funtion:01/Dec/2017 by Nader.Afshar@synchrotron.org.au
+;; initialize the SSI Global and channel registers off saved PVars
+;; M4501..4508
+;; P4501..4508
+;; M4598 and M4599 and P4598 and P4599
+;; ----------------------  
+;; Variables:
+;; P999
+;;   The number of axes on the controller 1..16 (8 for a standard geobrick)
+;; P901..P916
+;;   Define which axis are steppers - set to 1 for a stepper, 0 for servo
+;###########################################################
+
+; PLC to setup all axes as stepper motors.
+
+
+#define plcbase                 600
+#define temp_var                P697
+
+; number of axes
+#define naxis                   P999
+
+; used for storing current axis number
+#define axis_number             P(plcbase)
+
+;Axis amplifier type setting: 0=Servo, 1=Stepper
+#define axis_amp_type				 P(600+axis_number)
+
+#define timer32    I5411
+#define msec32    *8388608/I10WHILE(timer32>0)ENDWHILE
+
+; Channel SSI Ctrl register is M45mn with same convention used I7000 range, e.g. I7mn0
+#define ChXSSICtrl       M(4500 + axis_number);SSI channel control register
+#define ChXSSICtrlSvd    P(4500 + axis_number);SSI channel control saved config value 
+#define SSIGlobal1_4     M4598 ; Channels 1-4 SSI global control register
+#define SSIGlobal1_4Svd  P4598 ; Channels 1-4 SSI global control saved config value
+#define SSIGlobal5_8     M4599 ; Channels 5-8 SSI global control register
+#define SSIGlobal5_8Svd  P4599 ; Channels 5-8 SSI global control saved config value
+
+;Default settings
+
+p617..624=-1
+
+
+CLOSE;11
+OPEN PLC6;20
+CLEAR;22
+
+
+; setting SSI encoder global registers 
+SSIGlobal1_4 = SSIGlobal1_4Svd
+SSIGlobal5_8 = SSIGlobal5_8Svd
+
+; setting SSI encoder channel registers 
+axis_number=1
+while(axis_number !> 8)
+    ChXSSICtrl= ChXSSICtrlSvd
+    if (I(100*axis_number+10) > 0)
+        ;reset encoder readback to absolute encoder capture e.g. at power-on
+        temp_var=axis_number
+        ADDRESS#temp_var
+        CMD"$*"
+     endif
+    ;also check and for the companion axis
+    if (I(100*(axis_number+8)+10) > 0)
+        ;reset encoder readback to absolute encoder capture e.g. at power-on
+        temp_var=axis_number+8
+        ADDRESS#temp_var
+        CMD"$*"
+     endif
+    axis_number=axis_number+1
+endwhile
+
+
+
+axis_number=1;24
+while(axis_number !> 4);25
+    I7006=$F8CCFE + (axis_number-1)*$10000 + $100*axis_amp_type ;28
+    timer32 = 50 msec32;29
+    I7006=I7006&$FF7FFF;32
+    timer32 = 50 msec32;33
+    I7006=I7006&$F03FFF;36
+    timer32 = 50 msec32;37
+    axis_number=axis_number+1;39
+endwhile;40
+axis_number=5;42
+while(axis_number !> 8);43
+    I7106=$F8CCFE + (axis_number-1-4)*$10000 + $100*axis_amp_type ;46
+    timer32 = 50 msec32;47
+    I7106=I7106&$FF7FFF;50
+    timer32 = 50 msec32;51
+    I7106=I7106&$F03FFF;54
+    timer32 = 50 msec32;55
+    axis_number=axis_number+1;57
+endwhile;58
+
+
+
+DISABLE PLC6;60
+CLOSE;62
+

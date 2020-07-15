@@ -1,0 +1,63 @@
+END GATHER
+DELETE GATHER
+DELETE TRACE
+
+; Resets the i65 variable as a unique identifier for this brick
+i65=0
+
+; Set the number of axes on this controller
+P999=8
+
+; Load the encoder conversion table
+#include "GB_ECT_Default.pmc"
+
+; Load some sensible defaults for stepper motors
+#include "Geobrick_brick_defaults.pmc"
+
+; Load the standard m-variable definitions
+#include "BRICK_M_variables.pmc"
+
+; Clear all the existing PLCs and CSs
+#include "clear_PLC_CS.pmc"
+
+; Setup the internal drives for stepper motors
+#include "PLC6_amplifier_initialize.pmc"
+
+; Initialise the brick
+#include "PLC1_BRICK_initialize.pmc"
+
+; PLC to issue home command and perform fine phasing if necessary
+#include "PLC2_homing.pmc"
+
+; Fault protections
+#include "PLC4_protections.pmc"
+
+; Diagnostics e.g. CPU load monitoring
+#include "PLC5_diagnostics.pmc"
+
+; Kill or reduce holding current after a move
+#include "PLC7_idle_strategy.pmc"
+
+; Cure 'flip to servo' problem
+#include "PLC9_auto_cure.pmc"
+
+#include "GB_ECT_SSI.pmc"
+
+
+;Axis1
+#include "SR00ID01USR00_MOT1.e.pmc"
+;Axis2
+#include "SR00ID01USR00_MOT2.e.pmc"
+;Axis3
+#include "SR00ID01USR00_MOT3.e.pmc"
+;Axis4
+#include "SR00ID01USR00_MOT4.e.pmc"
+;Axis5
+#include "SR00ID01USR00_MOT5.e.pmc"
+;Axis6
+#include "SR00ID01USR00_MOT6.e.pmc"
+;Axis7
+#include "SR00ID01USR00_MOT7.e.pmc"
+;Axis8
+#include "SR00ID01USR00_MOT8.e.pmc"
+

@@ -1,0 +1,446 @@
+CLOSE
+
+;###############################################################################
+; Define encoder loss protection
+; Original Author: Alan Greer
+; 
+; Used variables:  
+; protection flags      P(axis_number + plcbase) & 1 = 1	;P401..P416
+; saved_fe_limit           P(axis_number+plcbase+32) ;P433..P448
+; protection_tripped       P(axis_number + plcbase+64) ;P465..P480 
+; 
+; Internally used: P499..P482
+; defined: Mxx84,85,86,21,22,74   
+;
+; Variables (and example values):
+; P401 = 291     ;Turn on all default protections for a motor with encoder on axis 1
+; ...
+; P408 = 290     ;Turn on all default protections for motor without encoder on axis 8
+; P4xx is a bitmask for axis xx with the following types of protection available:
+; 1 = encoder loss detection, when the encoder is marked as lost (mx84 = 0),
+;     the protection will be tripped and will need a manual reset 
+;     (set p(464+axis_number) = 0)
+; 2 = GeoBrick amplifier enable detection, when the amplifier goes undervoltage
+;     then trip the protection, auto reset when it comes back on
+; 4 = PMAC Micromech amplifier enable detection, when the amplifier is demanded 
+;     to be on, but is actually off, then trip the protection, auto reset when 
+;     it comes back on (NOT USED FOR GEOBRICKS)
+; 32 = Wrong limit detection, when the limit contrary to the intended movement
+;      direction is hit then trip the protection, a manual reset is required.
+;      NB: this protection is only effective if the limit is not active when
+;      the motion starts
+; 64 = Interlock detection, for any application specific interlock that can be 
+;      checked for via an M-variable.  Set P497 to the M-var number to use, the
+;      protection will be tripped when M(P497)=0 and auto reset when set back to 1
+; 256 = Uninitialized axis detection, when the brick has been powered off or reset
+;       this will be tripped for each axis and auto-reset when the axis is phased
+;       This is only effective if the axis is configured without automatic
+;       power-on phase search (it relies on the phase search error bit as the
+;       indication that the axis is not ininitialized)
+;
+; NB Needs either BRICK_M_variables.pmc or PMAC_M_variables.pmc loaded
+;------------------------------------------------------------------------------;
+;
+; Addition and modification by Nader.Afshar@synchrotron.org.au 
+; 05/Jun/14 - 27/Jun/14
+;
+; 1 - Axes limited to 1-16, axes 17-32 removed to free up pVar space
+; 2 - Some syntax changes for better readability
+; 3 - "Wrong limit" protection is added
+;
+; Recommended for stages with operational range between PLIM and MLIM physical 
+; switches, as in a linear displacement stage. 
+; Otherwise, e.g. with 360 deg rotary stages, consider not enabling this protection.
+;
+; The idea is to trip the protection in case of stage hit a limit
+; contrary to intended movement direction, i.e. hit a negative/positive limit 
+; while intended to moving in positive/negative direction.
+;
+; 3 possible situations are considered: 
+; 1) Wrong movement direction due to inconsistent commissioning of 
+; stage limit switches, encoder direction?, cabling and controller
+; 2) Physical run off in the opposite direction of intended drive, e.g. due to motor 
+; stall under weight
+; 3) Moving back from outside the operational range of movement in case of 
+; stage had ran over and passed a limit
+; 4) Closed loop configuration with wrong encoder direction? to be validated
+ 
+; In case the protection trips, the PLC would block all movements 
+; (including homing search) until the PLC trip byte for the axis is reset.
+;
+; Once reset, all movements would be possible again and PLC provides no 
+; further protection until the hit limit switch goes off. Therefore, 
+; recommended action is NOT to reset the trip until the cause of the 
+; situation is investigated and rectified.
+; 
+; Note that the motion control system would not be protected against a 
+; combination of cases 1 and 2 above (however unlikely it would be), 
+; but the embedded GBLV protection should stop the motion anyways 
+;
+; This routine is expected to have no effect on normal operation 
+; and homing moves.
+;------------------------------------------------------------------------------;
+;
+;-------------------------------------------------------------------;
+; The following must be uncommented in your main pmc file for PMACs ;
+;-------------------------------------------------------------------;
+;;Memory locations for encoder loss bit
+;;These addresses work for micromech racks, OD racks need different ones
+;ms0,i21 = $6488C8DCC0A1
+;ms0,i22 = $6488C9DCC0A2
+;ms0,i23 = $6488CADCC0A3
+;ms0,i24 = $6488CBDCC0A5
+;ms0,i25 = $6488CCDCC0A6
+;ms0,i26 = $6488CDDCC0A7
+;ms0,i27 = $6488CEDCC0A9
+;ms0,i28 = $6488CFDCC0AA
+;ms0,i29 = $6498C8DCC0AB
+;ms0,i30 = $6498C9DCC0AD
+;ms0,i31 = $6498CADCC0AE
+;ms0,i32 = $6498CBDCC0AF
+;ms0,i33 = $6498CCDCC0B1
+;ms0,i34 = $6498CDDCC0B2
+;ms0,i35 = $6498CEDCC0B3
+;ms0,i36 = $6498CFDCC0B5
+;ms32,i21 = $6488C8DCC0A1
+;ms32,i22 = $6488C9DCC0A2
+;ms32,i23 = $6488CADCC0A3
+;ms32,i24 = $6488CBDCC0A5
+;ms32,i25 = $6488CCDCC0A6
+;ms32,i26 = $6488CDDCC0A7
+;ms32,i27 = $6488CEDCC0A9
+;ms32,i28 = $6488CFDCC0AA
+;ms32,i29 = $6498C8DCC0AB
+;ms32,i30 = $6498C9DCC0AD
+;ms32,i31 = $6498CADCC0AE
+;ms32,i32 = $6498CBDCC0AF
+;ms32,i33 = $6498CCDCC0B1
+;ms32,i34 = $6498CDDCC0B2
+;ms32,i35 = $6498CEDCC0B3
+;ms32,i36 = $6498CFDCC0B5
+;;Configure MACRO station node enable i variables
+;ms0,i996 = $FBFFF
+;ms32,i996 = $2FBFFF
+;;Configure IO, enable all nodes
+;ms0,i975 = $CCC
+;ms32,i975 = $CCC
+;;Macro IC0 and IC2 Node Activate Control
+;i6841 = $FFFFF
+;i6941 = $2FFFFF
+;; i20 sets up 16-bit data transfer lines between
+;; expansion cards and UMAC macro card.
+;ms0,i20=$FFFF
+;ms32,i20=$FFFF
+;
+;; i19 controls how often they are read
+;ms0,i19=$4
+;ms32,i19=$4
+;###############################################################################
+
+#define plcbase					400
+
+; number of axes
+#define naxis                    P999
+; this is a temp var
+#define temp_var P497
+; used for storing current axis number
+#define axis_number              P(plcbase)
+
+#define encoder_bit_mask	1
+#define amp_bit_mask	2
+#define micromech_bit_mask	4
+#define wronglimit_bit_mask	32
+#define interlock_bit_mask	64
+#define uninit_bit_mask	256
+
+; use axis_number to calculate the P variable to look in to see
+; if protection is turned on on this axis
+#define encoder_protection       P(axis_number + plcbase) & encoder_bit_mask = encoder_bit_mask	;P401..P416
+#define amp_protection           P(axis_number + plcbase) & amp_bit_mask = amp_bit_mask
+#define micromech_protection     P(axis_number + plcbase) & micromech_bit_mask = micromech_bit_mask
+
+#define wronglimit_protection     P(axis_number + plcbase) & wronglimit_bit_mask = wronglimit_bit_mask ;NA_1406
+#define interlock_protection     P(axis_number + plcbase) & interlock_bit_mask = interlock_bit_mask
+#define uninit_protection     P(axis_number + plcbase) & uninit_bit_mask = uninit_bit_mask
+
+
+P401..416=290; Turn encoder loss protection=off, amp_protection=on, wronglimit_protection=on, interlock_protection=off, uninit_protection=on
+
+; wronglimit flags
+#define IsPLIM				M(axis_number*100 + 21)
+#define IsMLIM				M(axis_number*100 + 22)
+#define current_velocity		M(axis_number*100 + 74)
+#define stopped_on_limit		M(axis_number*100 + 30)
+
+; wronglimit protection states
+#define wronglimit_state     P(axis_number + plcbase+ 80) ;NA_1406 P481..P496
+#define wronglimit_PLIM_bitmask		128
+#define wronglimit_MLIM_bitmask		64
+P481..496=0 ; (0 & wronglimit_PLIM_bitmask) + (0 & wronglimit_PLIM_bitmask); No wronglimit detected
+
+#define interlock             P(416 + axis_number)  ;;8 Axes ONLY. Enumeration is 1..8 -> M0..M15 to leave 0 as "not used"
+P417..432=0
+;;#define temp_var			  P(497) ;; usage: temp_var = interlock
+;; m variable pointing at the memory location showing if the interlock is present (0 triggers trip)
+#define interlock_loss_bit	M(temp_var)
+
+; m variable pointing at the memory location showing if the encoder is present (0 triggers trip)
+#define encoder_loss_bit         M(axis_number*100 + 84)
+
+; m variable pointing at the memory location showing if uninitialized (1 triggers trip)
+#define uninit_loss_bit         M(axis_number*100 + 48)
+
+; These are for checking amp status
+; NOTE: under voltage is only wired to the first 4 axes in a geoBrick, so 
+; always check amp 1 status for under voltage
+#define amp_status               M(axis_number * 100 + 90) & 448
+#define amp_1_status             M190 & 448
+#define AMP_STATUS_READY         64
+#define AMP_STATUS_UNDER_VOLTAGE 128
+
+; These are for checking the status of the micromech amps (PMAC UMAC systems)
+#define micromech_status         M(7599 + axis_number + (axis_number - 1) & 16 / 16 * 8)
+#define micromech_demand         M(7699 + axis_number + (axis_number - 1) & 16 / 16 * 8)
+
+; m variable pointing at the CS number (-1) for the motor
+#define coord_system_number      M(axis_number*100 + 85)
+
+; m variable saying if the motor is in a CS
+#define in_coord_system          M(axis_number*100 + 86) > 0
+
+; this is the flag that is set if encoder is lost
+; needs to be reset by EPICS when encoder is restored
+#define protection_tripped       P(axis_number + plcbase+64) ;P465..P480 
+P465..480=0
+
+; if protection is tripped on this axis
+#define encoder_tripped          protection_tripped & encoder_bit_mask = encoder_bit_mask
+#define amp_tripped              protection_tripped & amp_bit_mask = amp_bit_mask
+#define micromech_tripped        protection_tripped & micromech_bit_mask = micromech_bit_mask
+#define wronglimit_tripped        protection_tripped & wronglimit_bit_mask = wronglimit_bit_mask ;NA_1406
+#define interlock_tripped        protection_tripped & interlock_bit_mask = interlock_bit_mask 
+#define uninit_tripped        protection_tripped & uninit_bit_mask = uninit_bit_mask
+
+
+
+
+; The amp_status bits flickers around a bit so we read it several times until we get consecutive reading the same before we act on it.
+#define amp_status_debounce P498
+#define amp_1_status_debounce P499
+
+; this is the old following error limit
+#define saved_fe_limit           P(axis_number+plcbase+32) ;P433..P448
+
+; this is the actual following error limit
+#define following_error_limit    I(axis_number*100 + 11)
+
+; this is how many matching readings are needed for amplifier status
+#define NREADINGS 5
+
+;**********************************************************
+;
+; Encoder loss detection PLC.  This checks if the encoder
+; is lost for each axis.  If it is, it kills the axis,
+; sets the following error to 1/16th of a count and aborts
+; any coordinate system move that this axis belongs to.
+;
+; If the encoder is recovered and the latch reset (P(464+axis_number)=0)
+; then the following error will be set back to its orginal
+; value
+;
+;**********************************************************
+OPEN PLC 4
+CLEAR
+
+axis_number = 1
+; Loop through all axis
+while(axis_number !> naxis)
+	
+    if (amp_protection)                         
+        ; The amp_status bits flicker around a bit so we read the amp_status bits NREADINGS times inside a while loop. This ensures 
+        ; that other PLC's and background tasks are run between the readings so that amp_status gets updated between readings. 
+        ; Tests have show you do not ever seem to get 3 consecutive incorrect readings from amp_status if the background 
+        ; tasks are allowed to run between readings.
+
+        ; Debounce the amp_status reading.
+        amp_status_debounce = amp_status
+        temp_var = 0
+        while (temp_var < NREADINGS)
+            if (amp_status = amp_status_debounce)
+                temp_var = temp_var + 1
+            else
+                amp_status_debounce = amp_status
+                temp_var = 0
+            endif
+        endwhile  
+
+        ; Debounce the amp_1_status reading.
+        amp_1_status_debounce = amp_1_status
+        temp_var = 0
+        while (temp_var < NREADINGS)
+            if (amp_1_status = amp_1_status_debounce)
+                temp_var = temp_var + 1
+            else
+                amp_1_status_debounce = amp_1_status
+                temp_var = 0
+            endif
+        endwhile          
+    endif  
+
+    ; If protection hasn't been tripped, check to see if it should be
+    ; NO: check regardless of <if (protection_tripped = 0)>
+	
+	
+	;-------------------------------wronglimit protection-------------------------------
+	; If  is enabled for this axis 
+	if (wronglimit_protection) and (current_velocity != 0) and (stopped_on_limit = 0) 
+		;So, wronglimit ONLY updates the state relevant to moving direction. Concerns?
+		
+		if (current_velocity < 0)
+			;Case1 moving negative
+			if ((wronglimit_state & wronglimit_PLIM_bitmask)=0)
+				;limit has not been seen, check if limit has just raised
+				if (IsPLIM > 0)
+					;Unexpected condition: limit opposite to the intended moving direction is hit
+					;OR stage is moving off the right limit! so : flag or set the other Case2 logic NOT to trip
+					wronglimit_state = wronglimit_state | wronglimit_PLIM_bitmask
+					protection_tripped = protection_tripped | wronglimit_bit_mask
+				endif
+			else
+				;wronglimit have been tripped...
+				if (IsPLIM = 0)
+					; stage is off the limit, now what to do?
+					; In case of switch flickering when going off, protection may trip again. Case not seen yet.
+					;NA_1406 actually resets the bit which is always 1 here 
+					wronglimit_state = wronglimit_state ^ wronglimit_PLIM_bitmask 
+				else
+					; either manually reset, or stage still moving towards the wrong limit despite the trip 
+				endif
+			endif
+		else ;;Case2 moving positive
+			;if (current_velocity > 0) ;redundant check: always true here
+				
+				if ((wronglimit_state & wronglimit_MLIM_bitmask)=0)
+					;limit has not been seen, check if limit has just raised
+					if (IsMLIM > 0)
+						;Unexpected condition: limit opposite to the intended moving direction is hit
+						wronglimit_state = wronglimit_state | wronglimit_MLIM_bitmask
+						protection_tripped = protection_tripped | wronglimit_bit_mask
+					endif
+				else
+					;wronglimit have been tripped...
+					if (IsMLIM = 0)
+						; stage is off the limit, now what to do?
+						; In case of switch flickering when going off, protection may trip again. Case not seen yet.
+						;NA_1406 actually resets the bit which is always 1 here
+						wronglimit_state = wronglimit_state ^ wronglimit_MLIM_bitmask 
+					else
+						; either manually reset, or stage still moving towards the wrong limit despite the trip
+					endif
+				endif
+			;endif
+		endif
+	endif
+	;Register limits hit; It should be already registered if inconsistent wronglimit has happened
+	if (IsMLIM > 0)
+		wronglimit_state = wronglimit_state | wronglimit_MLIM_bitmask
+	endif
+	if (IsPLIM > 0)
+		wronglimit_state = wronglimit_state | wronglimit_PLIM_bitmask
+	endif
+	;-------------------------------wronglimit protection-------------------------------
+	
+	;-------------------------------interlock_protection--------------------------------
+	temp_var = interlock ;; Set the associated input for interlock
+	if (interlock_protection and interlock_loss_bit = 0)
+		protection_tripped = protection_tripped | interlock_bit_mask
+	endif
+	;-------------------------------interlock_protection--------------------------------	
+
+	;-------------------------------uninit_protection-----------------------------------
+	if (uninit_protection and uninit_loss_bit = 1)
+		protection_tripped = protection_tripped | uninit_bit_mask
+	endif		
+	;-------------------------------uninit_protection-----------------------------------
+	
+	;-------------------------------encoder_loss_protection--------------------------------
+	; If encoder protection is enabled for this axis and the encoder loss bit
+	; drops to zero and we have not already
+	if (encoder_protection and encoder_loss_bit = 0)
+		protection_tripped = protection_tripped | encoder_bit_mask
+		uninit_loss_bit = 1 ; force uninit protection
+	endif
+	;-------------------------------encoder_loss_protection--------------------------------
+	
+	; Or amp protection is enabled and the amp status is no longer READY
+	if (amp_protection and amp_status_debounce != AMP_STATUS_READY)
+	; Or amp 1 is under voltage
+	or (amp_protection and amp_1_status_debounce = AMP_STATUS_UNDER_VOLTAGE)    
+		protection_tripped = protection_tripped | amp_bit_mask
+	endif
+
+	; Or micromech amp enabled but not active
+	if (micromech_protection and micromech_status = 0 and micromech_demand = 1)
+		protection_tripped = protection_tripped | micromech_bit_mask
+	endif
+
+    ; endif check all regardless of <if (protection_tripped = 0)>
+
+    ; Auto-reset the protection_tripped if it was an amp fault
+    if (amp_protection and amp_tripped)
+    and (amp_status_debounce = AMP_STATUS_READY and amp_1_status_debounce != AMP_STATUS_UNDER_VOLTAGE)       
+        ; XOR with 2 to clear amp protection
+        protection_tripped = protection_tripped ^ amp_bit_mask 
+    endif
+
+    ; Auto-reset the protection_tripped if it was due to interlock loss
+	temp_var = interlock ;; Set the associated input for interlock
+    if (interlock_protection and interlock_tripped) and (interlock_loss_bit > 0)
+        protection_tripped = protection_tripped ^ interlock_bit_mask 
+    endif	    
+	
+	; Auto-reset the protection_tripped if it was due to uninit loss
+	if (uninit_tripped) and (uninit_loss_bit = 0)
+        protection_tripped = protection_tripped ^ uninit_bit_mask 
+    endif	
+	
+    ; Auto-reset the protection_tripped if it was a micromech amp fault
+    if (micromech_protection and micromech_tripped) 
+    and (micromech_status = 1 and micromech_demand = 1)
+        ; XOR with 4 to clear micromech protection
+        protection_tripped = protection_tripped ^ micromech_bit_mask
+    endif
+
+    if (protection_tripped != 0) ;;if trip or nogo condition, then Abort, Kill, and reinforce following error. If not, reset it back.
+        ; Protection has been tripped, so set the following
+        ; error for this axis to 1/16th count
+		if(following_error_limit != 1) ;; usually, first hit
+			saved_fe_limit = following_error_limit
+
+			; Check to see if there is a coordinate system
+			; for this axis that needs aborting
+			if(in_coord_system)
+				; Abort any coordinate system motion
+				temp_var = coord_system_number + 1
+				ADDRESS&temp_var CMD"A"
+			endif
+			; Kill the specific axis
+			temp_var = axis_number 
+			ADDRESS#temp_var CMD"K"
+			following_error_limit = 1
+		endif
+		
+    else
+        ; Protection is not tripped nor stopping conditions so restore following error
+        if (following_error_limit = 1 and saved_fe_limit > 1)
+            following_error_limit = saved_fe_limit
+        endif
+    endif
+
+    axis_number=axis_number+1
+
+endwhile
+
+CLOSE
+
+ENABLE PLC 4

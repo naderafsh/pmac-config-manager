@@ -1,0 +1,211 @@
+; Sensible default i-variables to control 8 open-loop stepper motors from a Geobrick
+; Ensure this is loaded BEFORE any controller specific files that override these defaults
+
+; Controller setup
+; ================
+I00 =  0                ;Serial Card Number
+I01 =  0                ;Serial Port Mode
+I02 =  1                ;Control Panel Port Activation
+I05 =  2                ;PLC Program Control
+I06 =  1                ;Error Reporting Mode 
+I07 =  0                ;Phase Cycle Extension Period
+I08 =  2                ;Real Time Interrupt Period
+I10 =  1677653          ;Servo Interrupt Time
+I11 =  0                ;Programmed Move Calculation Time
+I12 =  0                ;Lookahead Time Spline Enable
+I13 =  0                ;Foreground In-Position Check Enable
+I14 =  0                ;Temporary Buffer Save Enable
+I15 =  0                ;Deg/Rad Control for User Trig. Functions
+I16 =  5                ;Rotary Buffer Request On Point
+I17 =  5                ;Rotary Buffer Request Off Point
+I18 =  10               ;Fixed Buffer Full Warning Point
+I19 =  7007             ;Clock Source I-Var. Number (Turbo PMAC2 Only)
+I27 =  0                ;Alternate TWS input format
+I30 =  0                ;Compensation Table Wrap Enable
+I35 =  0	        ;Hardware abort Enable - set to 1 to enable
+I37 = $0                ;Additional Wait States
+I38 =  0                ;In-Line CALL Enable
+I39 =  0                ;UBUS Accessory ID Variable Display Control
+I40 =  0                ;Watchdog Timer Reset Value
+I42 =  0                ;Spline/PVT Time Control Mode
+I43 =  0                ;Auxiliary Serial Port Parser Disable
+I45 =  0                ;Foreground Bin. Rot. Buf. Transfer Enable
+I46 =  0                ;P And Q Variable storage location
+I51 =  0                ;Compensation Table Enable
+I52 =  7                ;CPU Frequency Control 
+I53 =  12               ;Auxiliary Serial Port Baud Rate Control
+I54 =  12               ;Main Serial Port Baud Rate Control
+I59 =  0                ;Motor/C.S. Group Select
+I60 =  15               ;Filtered Velocity Sample Time
+I61 =  8                ;Filtered Velocity Shift
+I62 =  0                ;Internal Message Carriage Return Control
+I63 =  1                ;Control X Echo Enable
+I64 =  1                ;Unsolicited Responses Tag Enable
+I68 =  15               ;Coordinate System Activation Control
+
+        
+; Axis setup
+; ==========
+I100,8,100=1			; Enable all motors
+I101,8,100=1			; Commutation Enable
+I105,8,100=$35C0            	; Master Position Address
+I106,8,100=0               	; Master Follow Enable
+I107,8,100=96              	; Master Scale Factor
+I108,8,100=32			; Motor position scale factor
+I109,8,100=32			; Velocity loop scale factor
+I110,8,100=$0               	; Power-on Servo Position Address
+I115,8,100=1			; Abort/limit deceleration rate
+I119,8,100=0.25			; Maximum jog/home acceleration
+I124,8,100=$A00401		; Flag control: enable limits, over-travel limits, and stop all co-ordinate system axes on error
+I126,8,100=0               	; Home Offset
+I130,8,100=4096			; Proportional gain
+I131,8,100=0			; Derivative gain
+I132,8,100=16384		; Velocity feed forward gain
+I133,8,100=10000		; Integral gain
+I134,8,100=0			; Integration mode
+I135,8,100=4096			; Acceleration feed forward gain
+I161,8,100=0.19999992847	; Current loop integral gain
+I166,8,100=1400			; PWM scale factor
+I169,8,100=1280			; Output command limit
+I171,8,100=4096			; Counts per commutation cycles
+I172,8,100=512			; Commutation phase angle
+I176,8,100=0.5			; Current loop back-path proportional gain
+I177,8,100=500			; Motor magnetization current (500mA)
+I184,8,100=$FFFC00		; Current loop feedback mask word
+I197,8,100=1			; Software position capture (required for open loop steppers)
+
+
+; Addresses - Axis specific (Default is Open Loop)
+; ================================================
+I102=$78002           		; Command Output Address
+I103=$350B			; Set position loop feedback address to stepper feedback
+I104=$350B			; Set velocity loop feedback address to stepper feedback
+I181=$350B			; Power on phase position address
+I182=$78006			; Current loop feedback address
+I183=$350B			; Commutation position address
+I202=$7800A
+I203=$350E
+I204=$350E
+I281=$350E
+I282=$7800E
+I283=$350E
+I302=$78012
+I303=$3511
+I304=$3511
+I381=$3511
+I382=$78016
+I383=$3511
+I402=$7801A
+I403=$3514
+I404=$3514
+I481=$3514
+I482=$7801E
+I483=$3514
+I502=$78102
+I503=$3517
+I504=$3517
+I581=$3517
+I582=$78106
+I583=$3517
+I602=$7810A
+I603=$351A
+I604=$351A
+I681=$351A
+I682=$7810E
+I683=$351A
+I702=$78112
+I703=$351D
+I704=$351D
+I781=$351D
+I782=$78116
+I783=$351D
+I802=$7811A
+I803=$3520
+I804=$3520
+I881=$3520
+I882=$7811E
+I883=$3520
+
+
+; Data gathering setup (usually set by PeWin tuning program)
+; ==========================================================
+I5001=$8000A5
+I5002=$80008B
+I5003=$4000BF
+I5004=$4000B9
+I5049=10
+I5050=$F
+I5187=500
+I5188=0
+I5189=800
+
+
+; Co-ordinate system variables
+; ============================
+I5213=10 ;Segmentation time for &2
+I5220=50 ;Lookahead for &2
+I5250=1  ;Enable kinematics for &2
+
+; The following repeat the settings for &3 to &16
+I5313=10
+I5320=50
+I5350=1
+I5413=10
+I5420=50
+I5450=1
+I5513=10
+I5520=50
+I5550=1
+I5613=10
+I5620=50
+I5650=1
+I5713=10
+I5720=50
+I5750=1
+I5813=10
+I5820=50
+I5850=1
+I5913=10
+I5920=50
+I5950=1
+I6013=10
+I6020=50
+I6050=1
+I6113=10
+I6120=50
+I6150=1
+I6213=10
+I6220=50
+I6250=1
+I6313=10
+I6320=50
+I6350=1
+I6413=10
+I6420=50
+I6450=1
+I6513=10
+I6520=50
+I6550=1
+I6613=10
+I6620=50
+I6650=1
+
+
+; Servo IC settings
+; =================
+I7000 =  1473           ;MaxPhase/PWM Frequency Control 
+I7001 =  3              ;Phase Clock Frequency Control
+I7002 =  1              ;Servo Clock Frequency Control 
+I7003 =  2258           ;Hardware Clock Control 
+I7004 =  3              ;PWM Deadtime/PFM Pulse Width Control 
+I7005 = $7FFFC0         ;DAC Strobe Word 
+I7006 = $FB4DFE         ;ADC Strobe Word 
+I7007 =  0              ;Phase/Servo Clock Direction 
+I7100 =  1473           ;MaxPhase/PWM Frequency Control
+I7101 =  3              ;Phase Clock Frequency Control 
+I7102 =  1              ;Servo Clock Frequency Control 
+I7103 =  2258           ;Hardware Clock Control 
+I7104 =  3              ;PWM Deadtime/PFM Pulse Width Control
+I7105 = $7FFFC0         ;DAC Strobe Word
+I7106 = $FB4DFE         ;ADC Strobe Word
+I7107 =  3              ;Phase/Servo Clock Direction

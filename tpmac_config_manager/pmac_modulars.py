@@ -1,20 +1,11 @@
-from dls_pmaclib.dls_pmacremote import PmacEthernetInterface
-
-# from dls_pmaclib.pmacgather import PmacGather
-from dls_pmaclib.dls_pmcpreprocessor import ClsPmacParser
 import re
-
-# from epmcLib import vxx_rx
-from collections import OrderedDict
 
 from getpass import getuser
 from datetime import datetime
 import os
 from pathlib import Path
 
-# import difflib
-# from argparse import ArgumentParser
-from hashlib import md5, sha1
+from hashlib import md5
 from time import sleep
 
 
@@ -34,7 +25,7 @@ src_shorthand_replace_list = [
     ("ENDIF", "ENDI"),
     ("END IF", "ENDI"),
     ("ENDWHILE", "ENDW"),
-    ("FRAX\(A,B,C,U,V,W,X,Y,Z\)", "FRAX"),
+    (r"FRAX\(A,B,C,U,V,W,X,Y,Z\)", "FRAX"),
     ("GOSUB", "GOS"),
     ("GOTO", "GOT"),
     ("LINEAR", "LIN"),
@@ -46,16 +37,48 @@ src_shorthand_replace_list = [
 
 cs_module_types = ["INVERSE", "FORWARD"]
 
-EMPTY_MODULE = {
-    "code": "",
-    "checksum": 0,
-    "verified": False,
-    "open_cmd": "",
-    "close_cmd": "",
-    "downloadFailed": False,
-    "code_order": 0,
-}
+prog_module_types = ["PROG"]
+
 errRegExp = re.compile(r"ERR\d{3}")
+
+
+class codeModule:
+    body = ...  # type: str
+    checksum = ...  # type: str
+    open_cmd = ...  # type: str
+    close_cmd = ...  # type: str
+    code_order = ...  # type: int
+    download_failed = ...  # type: bool
+    verified = ...  # type: bool
+
+    def __init__(self, open_cmd="", close_cmd="", code_order=None, body=""):
+
+        if open_cmd:
+            self.open_cmd = open_cmd
+
+        if close_cmd:
+            self.close_cmd = close_cmd
+
+        if code_order:
+            self.code_order = code_order
+
+        self.verified = False
+        self.download_failed = False
+
+        self.setBody(body)
+
+    def setBody(self, body="", checksum=""):
+
+        self.body = body
+        self.verify(checksum)
+
+        return True
+
+    def verify(self, checksum=""):
+        self.checksum = md5(self.body.encode("utf-8")).hexdigest()
+        self.verified = checksum == self.checksum
+
+        return True
 
 
 def stripRgx(text, rgx_to_strip=" +", exclude_quote='"'):
@@ -83,7 +106,7 @@ def stripInBrackets(_src, brackets="()", to_strip=" \n\t\r"):
     return _src_out
 
 
-def pmcToBufferSyntax(src, resevered_words=[], shorthand_list=[]):
+def tpmcBufferSyntax(src, resevered_words=[], shorthand_list=[]):
 
     # TODO replace all spaces EXCEPT spaces within double quotes: pmac code ignores and won't save space
     # _src = _src.replace(' ','')
@@ -96,6 +119,11 @@ def pmcToBufferSyntax(src, resevered_words=[], shorthand_list=[]):
     src = re.sub(r"(?<=" + resevered_words + ")[\t, ]", "", src, flags=re.IGNORECASE)
 
     src = re.sub("->I, #", "->I #", src)
+
+    # remove line feeds after N labels (goto labels)
+    src = re.sub(r"(?<=\WN\d{1})\s+", "", src)
+    src = re.sub(r"(?<=\WN\d{2})\s+", "", src)
+    src = re.sub(r"(?<=\WN\d{3})\s+", "", src)
 
     # remove leading zeros
     src = re.sub(r"(?<![\d.])0+(?=\d+)", "", src, flags=re.IGNORECASE)
@@ -152,6 +180,8 @@ def savePmacModule(
 
     file_header = file_header + ";;\n"
 
+    Path(save_filename).parent.mkdir(parents=True, exist_ok=True)
+
     outFile = open(save_filename, "w")
     outFile.write(file_header + module_code)
     outFile.close()
@@ -159,30 +189,34 @@ def savePmacModule(
     return uploaded_module_md5
 
 
-def decodeModuleName(module_full_name):
+def pmacModuleName(module_full_name):
 
-    _CS = re.findall(r"(?<=&).(?=_)", module_full_name)[0]
+    _CS = re.findall(r"(?<=CS).(?=_)", module_full_name)[0]
     # last one isa the pmac module name, because _trailing is already excluded
     module_first_name = module_full_name.split("_")[-1]
 
     return _CS, module_first_name
 
 
-def tpmacModuleFileName(pmac_id="", module_full_name="", suffix="", output_dir_path=""):
+def tpmacModuleFullPath(
+    pmac_id="", module_full_name="", suffix="", ext="PMA", output_dir_path=""
+):
 
-    _CS, module_first_name = decodeModuleName(module_full_name)
+    _CS, module_first_name = pmacModuleName(module_full_name)
+
     return os.path.join(
         output_dir_path,
-        f"t_{pmac_id.replace('.','-')}_CS{_CS}-{module_first_name}.{suffix}.PMA".format(),
+        f"{pmac_id.replace('.','-').replace(':','_')}",
+        f"CS{_CS}_{module_first_name}.{suffix}.{ext}".format(),
     )
 
 
-def pmacCodeModules(code_source="", include_tailing=True):
+def tpmacExtractModules(code_source="", include_tailing=True):
     module_full_name = None
     _cs_number = 0  # not selected
     code_order = 0
-    global_full_name = "XX_&0_GLB" + freeCodeSuffix
-    current_global = EMPTY_MODULE.copy()
+    global_full_name = "CS0_GLOBAL" + freeCodeSuffix
+    current_global = codeModule()
     for i, code_line in enumerate(code_source):
         if len(code_line) < 1:
             continue
@@ -215,64 +249,59 @@ def pmacCodeModules(code_source="", include_tailing=True):
             _cs_number = int(_CS)
 
         if len(CS_list) > 1:
-            # TODO deal with  multiple modules OPENED in a single line
-            print(
-                "ERROR: not supported: multiple CS numbers in a single line!", code_line
+            # TODO deal with multiple CS changes in a single line
+            raise RuntimeError(
+                f"unsupported syntax, multiple CS numbers in a single line : {code_line}"
             )
-            exit(1)
 
         module_types_to_open = re.findall(r"(?<=OPEN)\s+[A-Z]+", code_line)
-        module_types_to_close = re.findall(r"OPEN\s+[A-Z]+(?=.*CLOSE)", code_line)
+        # module_types_to_close = re.findall(r"OPEN\s+[A-Z]+(?=.*CLOSE)", code_line)
         # code_line has and OPEN statements: OPENNING --------------------
         if len(module_types_to_open) > 0:
 
             if module_full_name is not None:
-                print(
+                raise RuntimeError(
                     f"ERROR trying to open {code_line[5:]} before {module_full_name} is closed"
                 )
 
-                exit(1)
-
             if len(module_types_to_open) > 1:
-                # TODO deal with  multiple modules OPENED in a single line
-                print(
-                    f"ERROR: not supported: multiple modules OPENED in a single line! {code_line}"
+                # multiple modules OPENED in a single line should have been dealt with before
+                raise RuntimeError(
+                    f"unsupported syntax, multiple modules OPEN statements in a single line: {code_line}"
                 )
-                exit(1)
 
             module_type = module_types_to_open[0].strip()
 
-            # module is not CS defendent
-            if module_type not in cs_module_types:
+            # module is CS dependent
+            if module_type in cs_module_types:
+                module_sp = ""
+                open_cmd = f"&{_CS}A OPEN {module_type} CLEAR\n"
+                close_cmd = f"CLOSE\n"
+            # module is not CS dependent
+            else:
                 # need a number to specify the module
                 module_sps = re.findall(r"(?<=" + module_type + r")\s*\d+", code_line)
                 if len(module_sps) == 1:
                     module_sp = str(int(module_sps[0].strip())).zfill(2)
-                    open_cmd = f"OPEN {module_type} {module_sp} CLEAR\n"
-                    close_cmd = f"CLOSE\n"
+                    if module_type in prog_module_types:
+                        open_cmd = f"A OPEN {module_type} {module_sp} CLEAR\n"
+                        close_cmd = f"CLOSE\n"
+                    else:
+                        open_cmd = f"DISABLE {module_type} {module_sp} OPEN {module_type} {module_sp} CLEAR\n"
+                        close_cmd = f"CLOSE\n"
                 else:
-                    print("ERROR: unspecified module name:", code_line)
-                    exit(1)
-            # module is CS dependent
-            else:
-                module_sp = ""
-                open_cmd = f"&{_CS}A\n OPEN {module_type} CLEAR\n"
-                close_cmd = f"CLOSE\n"
+                    raise RuntimeError(f"ERROR: unspecified module name: {code_line}")
 
             module_first_name = module_type + module_sp
 
-            # TODO move this and ensure the buffers is closed:
-            # if args.download:
-            #     pmac1.sendCommand(close_cmd)
-
             if module_first_name in cs_module_types:
-                module_full_name = f"XX_&{str(_cs_number)}_{module_first_name}"
+                module_full_name = f"CS{str(_cs_number)}_{module_first_name}"
             else:
-                module_full_name = f"XX_&{str(0)}_{module_first_name}"
+                module_full_name = f"CS{str(0)}_{module_first_name}"
 
             # reset module and tailings code
             source_module_code = ""
-            current_module = EMPTY_MODULE.copy()
+
             # There is only one global, not a current global
             # global_full_name = module_full_name + freeCodeSuffix
             # current_global = EMPTY_MODULE.copy()
@@ -286,16 +315,18 @@ def pmacCodeModules(code_source="", include_tailing=True):
             if module_full_name:
 
                 # modify the module code to PMA format to match uploaded code
-                source_module_code = pmcToBufferSyntax(
+                source_module_code = tpmcBufferSyntax(
                     source_module_code,
                     resevered_words=resevered_words,
                     shorthand_list=src_shorthand_replace_list,
                 )
 
-                current_module["code"] = source_module_code
-                current_module["open_cmd"] = open_cmd
-                current_module["close_cmd"] = close_cmd
-                current_module["code_order"] = code_order
+                current_module = codeModule(
+                    body=source_module_code,
+                    open_cmd=open_cmd,
+                    close_cmd=close_cmd,
+                    code_order=code_order,
+                )
 
                 yield module_full_name, current_module
 
@@ -303,16 +334,18 @@ def pmacCodeModules(code_source="", include_tailing=True):
 
         # code_line has no OPEN/CLOSE statements: body of moddule --------------------
         else:
-            # there is a Named module
+            # there is a named module
             if module_full_name:
                 source_module_code += code_line + "\n"
             else:
                 # non-module settings all go to
-                current_global["code"] += code_line + "\n"
-                current_global["code_order"] = code_order
+                current_global.body += code_line + "\n"
+                current_global.code_order = code_order
 
     # return _tailing module if needed
     if include_tailing and global_full_name:
+        # verify so that the checksum is make
+        current_global.verify()
         yield global_full_name, current_global
 
     return
@@ -354,64 +387,50 @@ def downloadCodeLines(pmac=None, module_code=[], section_size=20):
 
     code_sections.append(this_code_section)
 
-    # code_sections =[''.join(code_lines[i:i+section_size]) for i in range(0, len(code_lines), section_size)]
-
     for this_code_section in code_sections:
         # while code_section.endswith("\n"):
         #   code_section = code_section[:-1]
-        retStr, wasSuccessful = pmac.sendCommand(this_code_section, shouldWait=True)
-        if not wasSuccessful or errRegExp.findall(retStr) or len(retStr) < 1:
-            return False, f"{this_code_section.splitlines()[-1]} ---> {retStr}"
+        retStr, success = pmac.sendCommand(this_code_section, shouldWait=True)
+        if not success or errRegExp.findall(retStr) or len(retStr) < 1:
+            return f"{this_code_section.splitlines()[-1]} ---> {retStr}", False
 
-    return True, str(len(code_lines)).zfill(4)
+    n = len(code_lines)
 
-
-def downloadCodeLines_not_in_use(pmac=None, module_code=[], section_size=15):
-
-    for r in pmac.sendSeries(module_code.splitlines()):
-        wasSuccessful, lineNumber, code_line, retStr = (
-            r if len(r) == 4 else False,
-            0,
-            "",
-            "",
-        )
-        if not wasSuccessful or errRegExp.findall(retStr):
-            return False, f" {lineNumber}:{code_line} ---> {retStr}"
-
-    return True, ""
+    return f" {n} lines" if n > 0 else "cleared", True
 
 
-def downloadModule(pmac=None, module_record=EMPTY_MODULE):
+def downloadModule(pmac=None, code_module=codeModule()):
 
-    # send open comnmands
-    wasSuccessful, return_message = downloadCodeLines(pmac, module_record["open_cmd"])
+    # send open commands
+    return_message, success = downloadCodeLines(pmac, code_module.open_cmd)
 
-    if wasSuccessful:
-        wasSuccessful, return_message = downloadCodeLines(pmac, module_record["code"])
+    if success:
+        # doenload code body
+        return_message, success = downloadCodeLines(pmac, code_module.body)
 
-    # send close comnmands
-    closedSuccessfully, close_msg = downloadCodeLines(pmac, module_record["close_cmd"])
+    # send close commands
+    closedSuccessfully, close_msg = downloadCodeLines(pmac, code_module.close_cmd)
 
-    module_record["downloadFailed"] = not (wasSuccessful and closedSuccessfully)
+    code_module.download_failed = not (success and closedSuccessfully)
 
-    return wasSuccessful, return_message.strip("\r"), closedSuccessfully, close_msg
+    return return_message.strip("\r"), success, close_msg, closedSuccessfully
 
 
 def uploadModule(
     pmac, module_full_name, wait_secs=0.15, bunch_size=100, end_code="ERR003"
 ):
 
-    _CS, module_first_name = decodeModuleName(module_full_name)
+    _CS, module_first_name = pmacModuleName(module_full_name)
 
     line_no = -1
     this_line_no = 0
     uploaded_module_code = ""
     _code_lines = ""
-    status = True
+    success = True
     up_code_list = []
     added_lines = set()
     upload_error = None
-    while status and not _code_lines.endswith(end_code):
+    while success and not _code_lines.endswith(end_code):
 
         # TODO document this: tpmac sometimes sends back the same code line with a different (by 1) line number.
         # I assume at this point that this is related to the starting line, so, try to prevent requesting overlapping
@@ -423,9 +442,9 @@ def uploadModule(
         if int(_CS) > 0:
             _command_str = "&{}".format(_CS) + _command_str
 
-        _code_lines, status = pmac.sendCommand(_command_str)
+        _code_lines, success = pmac.sendCommand(_command_str)
 
-        if not status:
+        if not success:
             upload_error = _code_lines
             break
 
@@ -442,7 +461,7 @@ def uploadModule(
         if len(_code_lines) > 0:
             for _code_line in _code_lines.splitlines():
                 # check if the line starts with a line number
-                for s in _code_line.split(":"):
+                for s in _code_line.split(":", 1):
                     if s.isdecimal():
                         this_line_no = int(s)
                     else:
@@ -457,7 +476,7 @@ def uploadModule(
         else:
             this_line_no = line_no + 1
             print("empty return, terminating", end="...")
-            status = False
+            success = False
 
     if len(up_code_list) > 0:
         uploaded_module_code = "\n".join(list(zip(*up_code_list))[1]) + "\n"
@@ -465,7 +484,7 @@ def uploadModule(
         uploaded_module_code = ""
 
     # catch errors
-    if not status:
+    if not success:
         print("Comms Error", end="...")
 
     if upload_error:
@@ -485,15 +504,11 @@ if __name__ == "__main__":
 
 
 """
-The source code is assumed to be 
-
 All of the non-modular code will all be augmented in the original order, in one global code buffer.
 Currently, I and P and Q variables are NOT cosidered modules (or locals) but they can easily be added
 to the model.
 
-The modular code is assumed to be unique per buffer, e.g. the later definition of PLC1 
+The modular code is assumed to be unique per buffer, e.g. the later definition of PLC1
 will overwrite all the preceeding codes. This will generate a warning.
-
-
 
 """

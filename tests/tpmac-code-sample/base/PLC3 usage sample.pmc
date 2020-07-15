@@ -1,0 +1,12 @@
+#define	RequestAxis		P297	;request axis number
+
+#define movesTogo	p291
+#define currMax		p290
+
+#define incStep	p289
+#define RequestWait		P295
+
+RequestWait=15 ; seconds additional to minimum 1 seconds
+incStep=0.02;
+
+p297=7 p290=3500 p295=15 p291=5 p289=0.01 ena plc3
