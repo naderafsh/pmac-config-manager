@@ -405,7 +405,7 @@ def downloadModule(pmac=None, code_module=codeModule()):
     return_message, success = downloadCodeLines(pmac, code_module.open_cmd)
 
     if success:
-        # doenload code body
+        # download code body
         return_message, success = downloadCodeLines(pmac, code_module.body)
 
     # send close commands

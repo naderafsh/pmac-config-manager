@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from argparse import ArgumentParser
 from time import sleep
-from tpmac_config_manager import pmac_modulars as pm
+from pmac_config_manager import pmac_modulars as pm
 
 """
 A proof of concept for a base-overlay model to manage configuration of pmac controllers.

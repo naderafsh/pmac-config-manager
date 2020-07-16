@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "tpmac-config-manager"
+name = "pmac-config-manager"
 version = "0.1.0"
 description = ""
 authors = ["Nader Afshar"]
