@@ -3,15 +3,8 @@
     "editor.formatOnSave": true,
     "editor.formatOnSaveTimeout": 3000,
     "editor.formatOnType": false,
-    "python.dataScience.jupyterCommandLineArguments": [],
     "python.formatting.provider": "black",
-    "python.linting.banditEnabled": false,
     "python.linting.enabled": true,
-    "python.linting.flake8Enabled": true,
-    "python.linting.flake8Args": [
-        "--max-line-length=120",
-        "--ignore=F541",
-    ],
-    "python.linting.pylintEnabled": true,
-    "python.pythonPath": "/home/afsharn/.cache/pypoetry/virtualenvs/tpmac-config-manager-jr8czYHm-py3.8"
+    "python.linting.flake8Enabled": false,
+    "python.pythonPath": "/home/afsharn/.cache/pypoetry/virtualenvs/pmac-config-manager-9g5-j301-py3.8"
 }

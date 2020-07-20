@@ -13,7 +13,7 @@ freeCodeSuffix = "_tailing"
 
 
 resevered_words = r"[\>,\<,\!,\(,\),=,+,\-,*,/,\n]"
-src_shorthand_replace_list = [
+src_whole_shorthands = [
     ("ADDRESS", "ADR"),
     ("AND", "AND"),
     ("CMD ", "CMD"),
@@ -28,12 +28,17 @@ src_shorthand_replace_list = [
     (r"FRAX\(A,B,C,U,V,W,X,Y,Z\)", "FRAX"),
     ("GOSUB", "GOS"),
     ("GOTO", "GOT"),
-    ("LINEAR", "LIN"),
     ("OR", "OR"),
-    ("RAPID", "RPD"),
     ("RETURN", "RET "),
     ("WHILE", "WHILE"),
 ]
+
+src_move_prefix = ["[ABS,INC]"]
+
+src_move_suffix = r"[A, B, C, U, V, W, X, Y, Z]"
+
+src_move_shorthands = [("LINEAR", "LIN"), ("RAPID", "RPD")]
+
 
 cs_module_types = ["INVERSE", "FORWARD"]
 
@@ -50,8 +55,24 @@ class codeModule:
     code_order = ...  # type: int
     download_failed = ...  # type: bool
     verified = ...  # type: bool
+    module_type = ...  # type: str
 
-    def __init__(self, open_cmd="", close_cmd="", code_order=None, body=""):
+    def __init__(
+        self,
+        open_line="",
+        first_name="",
+        cs_id=None,
+        module_sp=None,
+        open_cmd="",
+        close_cmd="",
+        code_order=None,
+        body="",
+    ):
+
+        if open_line:
+            self.setFromCodeLine(code_line=open_line, _CS=cs_id)
+        elif first_name:
+            self.setFromFirstName(first_name=first_name, cs_id=cs_id)
 
         if open_cmd:
             self.open_cmd = open_cmd
@@ -67,10 +88,59 @@ class codeModule:
 
         self.setBody(body)
 
-    def setBody(self, body="", checksum=""):
+    def setFromFirstName(self, first_name="", cs_id="0"):
+
+        if not first_name:
+            return False
+
+        if first_name in cs_module_types:
+            self.first_name = first_name
+            self.module_type = self.first_name
+            self.module_sp = ""
+            self.open_cmd = f"&{cs_id}A OPEN {self.module_type} CLEAR\n"
+            self.close_cmd = f"CLOSE\n"
+        else:
+            self.setFromCodeLine(code_line="OPEN " + first_name, _CS=cs_id)
+
+        return True
+
+    def setFromCodeLine(self, code_line="", _CS="0"):
+
+        module_types_to_open = re.findall(r"(?<=OPEN)\s+[A-Z]+", code_line)
+        self.module_type = module_types_to_open[0].strip()
+
+        if self.module_type in cs_module_types:
+            self.module_sp = ""
+            self.open_cmd = f"&{_CS}A OPEN {self.module_type} CLEAR\n"
+            self.close_cmd = f"CLOSE\n"
+        # module is not CS dependent
+        else:
+            # need a number to specify the module
+            module_sps = re.findall(r"(?<=" + self.module_type + r")\s*\d+", code_line)
+            if len(module_sps) == 1:
+                self.module_sp = str(int(module_sps[0].strip())).zfill(2)
+                if self.module_type in prog_module_types:
+                    self.open_cmd = (
+                        f"A OPEN {self.module_type} {self.module_sp} CLEAR\n"
+                    )
+                    self.close_cmd = f"CLOSE\n"
+                else:
+                    self.open_cmd = f"DISABLE {self.module_type} {self.module_sp} OPEN {self.module_type} {self.module_sp} CLEAR\n"
+                    self.close_cmd = f"CLOSE\n"
+            else:
+                raise RuntimeError(f"ERROR: unspecified module name: {code_line}")
+
+        self.first_name = self.module_type + self.module_sp
+
+        return True
+
+    def setBody(self, body="", checksum="", code_order=None):
 
         self.body = body
         self.verify(checksum)
+
+        if code_order:
+            self.code_order = code_order
 
         return True
 
@@ -106,7 +176,7 @@ def stripInBrackets(_src, brackets="()", to_strip=" \n\t\r"):
     return _src_out
 
 
-def tpmcBufferSyntax(src, resevered_words=[], shorthand_list=[]):
+def tpmcBufferSyntax(src):
 
     # TODO replace all spaces EXCEPT spaces within double quotes: pmac code ignores and won't save space
     # _src = _src.replace(' ','')
@@ -128,15 +198,25 @@ def tpmcBufferSyntax(src, resevered_words=[], shorthand_list=[]):
     # remove leading zeros
     src = re.sub(r"(?<![\d.])0+(?=\d+)", "", src, flags=re.IGNORECASE)
 
-    for _find, _replace in shorthand_list:
+    for _find, _replace in src_whole_shorthands:
         # replace long forms with shorthands
         src = re.sub(
             r"(?<=[^A-Z])" + _find + r"[\t, ]*", _replace, src, flags=re.IGNORECASE
         )
+
         # insert a line feed before reserved words, except if they are in paranthesis...
         # so first add line feed to all, and then STRIP ALL linefeeds from within paranthesis
         src = re.sub(
             r"(?<=[^A-Z,^\n])" + _replace, r"\n" + _replace, src, flags=re.IGNORECASE
+        )
+
+    for _find, _replace in src_move_shorthands:
+
+        src = re.sub(
+            r"(?<=ABS|INC)" + _find + r"(?=[ABCUVWXYZ])",
+            _replace,
+            src,
+            flags=re.IGNORECASE,
         )
 
     src = stripInBrackets(src, brackets="()", to_strip="\n")
@@ -159,18 +239,18 @@ def savePmacModule(
     device_id,
     module_id="",
     save_filename="",
-    module_code="",
+    code_module=None,
     user_time_in_header=False,
     source_id="",
 ):
 
-    uploaded_module_md5 = md5(module_code.encode("utf-8")).hexdigest()
+    code_module_md5 = md5(code_module.body.encode("utf-8")).hexdigest()
     file_header = (
         ";;\n"
         ";; device: {0}\n"
         ";; module: {2}\n"
         ";; checksum: md5({1})\n"
-        ";; source: {3}\n".format(device_id, uploaded_module_md5, module_id, source_id)
+        ";; source: {3}\n".format(device_id, code_module_md5, module_id, source_id)
     )
 
     if user_time_in_header:
@@ -183,10 +263,10 @@ def savePmacModule(
     Path(save_filename).parent.mkdir(parents=True, exist_ok=True)
 
     outFile = open(save_filename, "w")
-    outFile.write(file_header + module_code)
+    outFile.write(file_header + code_module.body)
     outFile.close()
 
-    return uploaded_module_md5
+    return code_module_md5
 
 
 def pmacModuleName(module_full_name):
@@ -215,6 +295,7 @@ def tpmacExtractModules(code_source="", include_tailing=True):
     module_full_name = None
     _cs_number = 0  # not selected
     code_order = 0
+    _CS = None
     global_full_name = "CS0_GLOBAL" + freeCodeSuffix
     current_global = codeModule()
     for i, code_line in enumerate(code_source):
@@ -242,7 +323,7 @@ def tpmacExtractModules(code_source="", include_tailing=True):
         code_source[i] = code_line
 
         # find instances of &cc in the command line:
-        CS_list = re.findall(r"(?<=&)\d", code_line)
+        CS_list = re.findall(r"(?<=&)\d+", code_line)
 
         if len(CS_list) > 0:
             _CS = CS_list[-1]
@@ -270,34 +351,16 @@ def tpmacExtractModules(code_source="", include_tailing=True):
                     f"unsupported syntax, multiple modules OPEN statements in a single line: {code_line}"
                 )
 
-            module_type = module_types_to_open[0].strip()
+            # there is a single module type identified here
 
-            # module is CS dependent
-            if module_type in cs_module_types:
-                module_sp = ""
-                open_cmd = f"&{_CS}A OPEN {module_type} CLEAR\n"
-                close_cmd = f"CLOSE\n"
-            # module is not CS dependent
+            current_module = codeModule(
+                open_line=code_line, cs_id=_CS
+            )  # type = codeModule
+
+            if current_module.module_type in cs_module_types:
+                module_full_name = f"CS{str(_cs_number)}_{current_module.first_name}"
             else:
-                # need a number to specify the module
-                module_sps = re.findall(r"(?<=" + module_type + r")\s*\d+", code_line)
-                if len(module_sps) == 1:
-                    module_sp = str(int(module_sps[0].strip())).zfill(2)
-                    if module_type in prog_module_types:
-                        open_cmd = f"A OPEN {module_type} {module_sp} CLEAR\n"
-                        close_cmd = f"CLOSE\n"
-                    else:
-                        open_cmd = f"DISABLE {module_type} {module_sp} OPEN {module_type} {module_sp} CLEAR\n"
-                        close_cmd = f"CLOSE\n"
-                else:
-                    raise RuntimeError(f"ERROR: unspecified module name: {code_line}")
-
-            module_first_name = module_type + module_sp
-
-            if module_first_name in cs_module_types:
-                module_full_name = f"CS{str(_cs_number)}_{module_first_name}"
-            else:
-                module_full_name = f"CS{str(0)}_{module_first_name}"
+                module_full_name = f"CS{str(0)}_{current_module.first_name}"
 
             # reset module and tailings code
             source_module_code = ""
@@ -315,17 +378,10 @@ def tpmacExtractModules(code_source="", include_tailing=True):
             if module_full_name:
 
                 # modify the module code to PMA format to match uploaded code
-                source_module_code = tpmcBufferSyntax(
-                    source_module_code,
-                    resevered_words=resevered_words,
-                    shorthand_list=src_shorthand_replace_list,
-                )
+                source_module_code = tpmcBufferSyntax(source_module_code)
 
-                current_module = codeModule(
-                    body=source_module_code,
-                    open_cmd=open_cmd,
-                    close_cmd=close_cmd,
-                    code_order=code_order,
+                current_module.setBody(
+                    body=source_module_code, code_order=code_order,
                 )
 
                 yield module_full_name, current_module
@@ -461,22 +517,30 @@ def uploadModule(
         if len(_code_lines) > 0:
             for _code_line in _code_lines.splitlines():
                 # check if the line starts with a line number
-                for s in _code_line.split(":", 1):
-                    if s.isdecimal():
-                        this_line_no = int(s)
-                    else:
-                        if this_line_no not in added_lines and len(s) > 0:
-                            up_code_list.append((this_line_no, s))
-                            added_lines.add(this_line_no)
 
-                        else:
-                            # duplicated line: increase steps
-                            pass
+                code_line_splited = _code_line.split(":", 1)
+
+                assert len(code_line_splited) == 2 and code_line_splited[0].isdecimal
+                # found a line number
+                this_line_no = int(code_line_splited[0])
+                this_line_code = code_line_splited[1]
+
+                if this_line_no not in added_lines:
+                    up_code_list.append((this_line_no, this_line_code))
+                    added_lines.add(this_line_no)
+                else:
+                    # duplicated line: it is possible that this line was truncated the last time
+                    # ovewrite last one!
+                    assert up_code_list[-1][0] == this_line_no
+                    up_code_list[-1] = (this_line_no, this_line_code)
 
         else:
             this_line_no = line_no + 1
             print("empty return, terminating", end="...")
             success = False
+
+    # remove empty lines
+    up_code_list = [item for item in up_code_list if len(item[1]) > 0]
 
     if len(up_code_list) > 0:
         uploaded_module_code = "\n".join(list(zip(*up_code_list))[1]) + "\n"
@@ -496,7 +560,11 @@ def uploadModule(
             end="...",
         )
 
-    return uploaded_module_code
+    # now put the loaded code into a code module
+    code_module = codeModule(body=uploaded_module_code)
+    code_module.setFromFirstName(first_name=module_first_name, cs_id=_CS)
+
+    return code_module
 
 
 if __name__ == "__main__":

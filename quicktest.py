@@ -80,16 +80,11 @@ src_full_path = args.src_file
 
 src_path, src_filename = os.path.split(os.path.abspath(src_full_path))
 
-# os.path.join(src_path, outDumpDir)
-
 output_dir_base = args.out_dir
-
-# pmc_test_path = src_path
-# pmc_test_file = src_filename
 
 Path(output_dir_base).mkdir(parents=True, exist_ok=True)
 
-pmc_source_parsed_file = os.path.join(output_dir_base, "source.parsed.pmc")
+pmc_source_parsed_file = os.path.join(output_dir_base, "source.parsed.PMA")
 pmac_cs = "?"
 pmac_module = "NONE"
 
@@ -103,22 +98,21 @@ pmc_parser = ClsPmacParser()
 
 if pmc_parser.parse(src_full_path):
     pmc_parser.saveOutput(outputFile=pmc_source_parsed_file)
-    if args.verbose > 3:
-        print(pmc_parser.output)
+    print(pmc_parser.output) if args.verbose > 3 else ()
 else:
     exit(1)
 
 print("\nModularising parsed code", end="...\n\n") if args.verbose > 1 else ()
 
 modules_dict = {}
-for module_full_name, module_record in pm.tpmacExtractModules(
+for module_full_name, code_module in pm.tpmacExtractModules(
     code_source=pmc_parser.output, include_tailing=True
 ):
 
     if module_full_name in modules_dict:
         print(f"\nWARNING: module {module_full_name} re-defined", end="...")
 
-    modules_dict.update({module_full_name: module_record})
+    modules_dict.update({module_full_name: code_module})
     # save sources in PMA files
     source_module_filename = pm.tpmacModuleFullPath(
         suffix="src",
@@ -135,7 +129,7 @@ for module_full_name, module_record in pm.tpmacExtractModules(
         device_id=pmac_ip_address,
         module_id=module_full_name.split("_", 1)[1],
         save_filename=source_module_filename,
-        module_code=module_record.body,
+        code_module=code_module,
         source_id=src_full_path,
         user_time_in_header=True,
     )
@@ -169,14 +163,14 @@ sleep(1)
 
 if args.download:
     print("\nDownloading to tpmac...", end="...\n\n")
-    for module_full_name, module_record in modules_sorted.items():
+    for module_full_name, code_module in modules_sorted.items():
         if module_full_name.endswith(pm.freeCodeSuffix) and not args.download_tailing:
             print(f"-- skiped   {module_full_name} (tailings)", end="\n") if (
                 args.verbose > 1
             ) else ()
             continue
 
-        if not module_record.body and not args.download_blank:
+        if not code_module.body and not args.download_blank:
             print(f"-- skiped   {module_full_name} (blank)", end="\n") if (
                 args.verbose > 1
             ) else ()
@@ -187,7 +181,7 @@ if args.download:
         ) else ()
 
         (returned_msg, downloadSuccess, close_msg, closeSuccess,) = pm.downloadModule(
-            pmac=pmac1, code_module=module_record
+            pmac=pmac1, code_module=code_module
         )
 
         if not downloadSuccess:
@@ -223,9 +217,11 @@ for module_full_name in modules_sorted:
         # if this is a PLC or Porgram, and the return of the characters may exceed 1400 bytes,
         # then list it line by line using this format: LIST {module},{line_no}
 
-        uploaded_module_code = pm.uploadModule(
+        upl_code_module = pm.uploadModule(
             pmac=pmac1, module_full_name=module_full_name, wait_secs=0.025
         )
+
+        # code_module.__init__(body=uploaded_module_code)
 
         uploaded_module_filename = pm.tpmacModuleFullPath(
             suffix="upl",
@@ -243,7 +239,7 @@ for module_full_name in modules_sorted:
             device_id=pmac_ip_address,
             module_id=module_full_name.split("_", 1)[1],
             save_filename=uploaded_module_filename,
-            module_code=uploaded_module_code,
+            code_module=upl_code_module,
             source_id="uploaded",
             user_time_in_header=True,
         )
@@ -252,13 +248,15 @@ for module_full_name in modules_sorted:
             # checksums match, hooray!
             modules_sorted[module_full_name].verified = True
             if args.verbose > 0:
-                if len(uploaded_module_code) < 1:
-                    print("is cleared", end="...")
+                if len(upl_code_module.body) < 1:
+                    print("blank", end="...")
+                else:
+                    print("loaded", end="...")
                 print("verified.")
         else:
             modules_sorted[module_full_name].verified = False
             _src = modules_sorted[module_full_name].body
-            _upl = uploaded_module_code
+            _upl = upl_code_module.body
 
             print("**** ERROR: not verified ****") if (args.verbose > -1) else ()
             # if args.verbose > 3:
