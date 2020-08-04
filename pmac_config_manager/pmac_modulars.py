@@ -6,39 +6,11 @@ import os
 from pathlib import Path
 
 from hashlib import md5
-from time import sleep
+from time import sleep, time
+from collections import OrderedDict
 
 
 freeCodeSuffix = "_tailing"
-
-
-resevered_words = r"[\>,\<,\!,\(,\),=,+,\-,*,/,\n]"
-src_whole_shorthands = [
-    ("ADDRESS", "ADR"),
-    ("AND", "AND"),
-    ("CMD ", "CMD"),
-    ("COMMAND", "CMD"),
-    ("&COMMAND", "CMD"),
-    ("DISABLE", "DIS"),
-    ("DWELL", "DWE"),
-    ("ENABLE", "ENA"),
-    ("ENDIF", "ENDI"),
-    ("END IF", "ENDI"),
-    ("ENDWHILE", "ENDW"),
-    (r"FRAX\(A,B,C,U,V,W,X,Y,Z\)", "FRAX"),
-    ("GOSUB", "GOS"),
-    ("GOTO", "GOT"),
-    ("OR", "OR"),
-    ("RETURN", "RET "),
-    ("WHILE", "WHILE"),
-]
-
-src_move_prefix = ["[ABS,INC]"]
-
-src_move_suffix = r"[A, B, C, U, V, W, X, Y, Z]"
-
-src_move_shorthands = [("LINEAR", "LIN"), ("RAPID", "RPD")]
-
 
 cs_module_types = ["INVERSE", "FORWARD"]
 
@@ -152,6 +124,10 @@ class codeModule:
 
 
 def stripRgx(text, rgx_to_strip=" +", exclude_quote='"'):
+    """
+    strips what specified as rgx_to_strip, leaving intances inside quotes intact
+    """
+
     lst = text.split(exclude_quote)
     for i, item in enumerate(lst):
         if not i % 2:
@@ -160,7 +136,10 @@ def stripRgx(text, rgx_to_strip=" +", exclude_quote='"'):
 
 
 def stripInBrackets(_src, brackets="()", to_strip=" \n\t\r"):
-    """removes all ws within brackets"""
+    """
+    removes all white-spaces within brackets
+    
+    """
 
     # TODO make this hack code pythonic
     p_count = 0
@@ -177,17 +156,49 @@ def stripInBrackets(_src, brackets="()", to_strip=" \n\t\r"):
 
 
 def tpmcBufferSyntax(src):
+    """
+    modifies syntax of the script to match the tpmac stored code as retreives using List command
+    
+    """
 
-    # TODO replace all spaces EXCEPT spaces within double quotes: pmac code ignores and won't save space
-    # _src = _src.replace(' ','')
+    resevered_words = r"[\>,\<,\!,\(,\),=,+,\-,*,/,\n]"
+    src_move_shorthands = [("LINEAR", "LIN"), ("RAPID", "RPD")]
+    src_whole_shorthands = [
+        ("ADDRESS", "ADR"),
+        ("AND", "AND"),
+        ("CMD ", "CMD"),
+        ("COMMAND", "CMD"),
+        ("&COMMAND", "CMD"),
+        ("DISABLE", "DIS"),
+        ("DWELL", "DWE"),
+        ("ENABLE", "ENA"),
+        ("ENDIF", "ENDI"),
+        ("END IF", "ENDI"),
+        ("ENDWHILE", "ENDW"),
+        (r"FRAX\(A,B,C,U,V,W,X,Y,Z\)", "FRAX"),
+        ("GOSUB", "GOS"),
+        ("GOTO", "GOT"),
+        ("OR", "OR"),
+        ("RETURN", "RET "),
+        ("WHILE", "WHILE"),
+    ]
+    # remove buffer commands from source
+    src = re.sub(r"clear\s", "", src, flags=re.IGNORECASE)
+
+    ## trim extra tabs and spaces
+
     # add a dumy line to ensure regex searches find keywords. remoe it at the end.
     src = "\t" + src
+    # replace all spaces except spaces within double quotes: pmac code ignores and won't save space
     src = stripRgx(src, rgx_to_strip=" +")
-
-    src = re.sub(r"clear\s", "", src, flags=re.IGNORECASE)
+    # reduce repeated tabs and spaces to single spaces
     src = re.sub(r"[\t, ]{2,}", " ", src, flags=re.IGNORECASE)
+    # remove tabs and spaces tailing reserved words
     src = re.sub(r"(?<=" + resevered_words + ")[\t, ]", "", src, flags=re.IGNORECASE)
+    # remove tabs and spaces leading reserved words
+    src = re.sub(r"[\t, ](?=" + resevered_words + ")", "", src, flags=re.IGNORECASE)
 
+    # remove extra comma in coordinate axis assignment
     src = re.sub("->I, #", "->I #", src)
 
     # remove line feeds after N labels (goto labels)
@@ -195,21 +206,23 @@ def tpmcBufferSyntax(src):
     src = re.sub(r"(?<=\WN\d{2})\s+", "", src)
     src = re.sub(r"(?<=\WN\d{3})\s+", "", src)
 
-    # remove leading zeros
+    # remove leading zeros from constants
     src = re.sub(r"(?<![\d.])0+(?=\d+)", "", src, flags=re.IGNORECASE)
 
+    # replace long forms with shorthands
     for _find, _replace in src_whole_shorthands:
-        # replace long forms with shorthands
+
         src = re.sub(
             r"(?<=[^A-Z])" + _find + r"[\t, ]*", _replace, src, flags=re.IGNORECASE
         )
 
         # insert a line feed before reserved words, except if they are in paranthesis...
-        # so first add line feed to all, and then STRIP ALL linefeeds from within paranthesis
+        # so first add line feed to all, and then strip all linefeeds from within paranthesis
         src = re.sub(
             r"(?<=[^A-Z,^\n])" + _replace, r"\n" + _replace, src, flags=re.IGNORECASE
         )
 
+    # replace move command shorthands with
     for _find, _replace in src_move_shorthands:
 
         src = re.sub(
@@ -219,10 +232,10 @@ def tpmcBufferSyntax(src):
             flags=re.IGNORECASE,
         )
 
+    # strip line feeds within brackets
     src = stripInBrackets(src, brackets="()", to_strip="\n")
 
     # _src = re.sub(r'\n+', r'\n', _src, flags=re.IGNORECASE)
-    src = re.sub(r"[\t, ](?=" + resevered_words + ")", "", src, flags=re.IGNORECASE)
 
     # swap hex numbers for decimals
     for hex_num in re.findall(r"\$[A-F,0-9]+", src):
@@ -244,13 +257,12 @@ def savePmacModule(
     source_id="",
 ):
 
-    code_module_md5 = md5(code_module.body.encode("utf-8")).hexdigest()
     file_header = (
         ";;\n"
         ";; device: {0}\n"
         ";; module: {2}\n"
         ";; checksum: md5({1})\n"
-        ";; source: {3}\n".format(device_id, code_module_md5, module_id, source_id)
+        ";; source: {3}\n".format(device_id, code_module.checksum, module_id, source_id)
     )
 
     if user_time_in_header:
@@ -266,7 +278,7 @@ def savePmacModule(
     outFile.write(file_header + code_module.body)
     outFile.close()
 
-    return code_module_md5
+    return code_module.checksum
 
 
 def pmacModuleName(module_full_name):
@@ -291,7 +303,17 @@ def tpmacModuleFullPath(
     )
 
 
+
+
 def tpmacExtractModules(code_source="", include_tailing=True):
+
+    PPMAC_TEST_MODE = False
+
+    if PPMAC_TEST_MODE:
+        linecomment_prefix = "//"
+    else:
+        linecomment_prefix = ";"
+
     module_full_name = None
     _cs_number = 0  # not selected
     code_order = 0
@@ -314,6 +336,7 @@ def tpmacExtractModules(code_source="", include_tailing=True):
                 flags=re.IGNORECASE,
             )
 
+        # In case code_source includes multi-line segments
         splited_lines = code_line.splitlines()
         if len(splited_lines) > 1:
             for j, added_line in enumerate(splited_lines[1:]):
@@ -321,6 +344,9 @@ def tpmacExtractModules(code_source="", include_tailing=True):
 
         code_line = splited_lines[0]
         code_source[i] = code_line
+
+        if code_line.startswith(linecomment_prefix):
+            continue
 
         # find instances of &cc in the command line:
         CS_list = re.findall(r"(?<=&)\d+", code_line)
@@ -424,8 +450,59 @@ def downloadParsedCode(pmac=None, code_source=""):
     return
 
 
-def downloadCodeLines(pmac=None, module_code=[], section_size=20):
+def downloadCodeLines(pmac=None, module_code=[], section_size=1):
+    """
+    downloads pmac script to pmac
 
+    the script is devided into sections of section_size and sent to the pmac using sendCommand 
+
+    this was an attempt to use sendSeries. It frequently fails to write into buffers returning ERR005, indicating buffer gets closed while downloading.
+    
+    """
+    code_lines = module_code.splitlines(True)
+    code_sections = []
+    this_code_section = ""
+    this_section_lines = 0
+    secion_counter = 0
+    for code_line in code_lines:
+        if (this_section_lines < section_size) and (
+            len(this_code_section) + len(code_line)
+        ) < 255:
+            this_code_section = this_code_section + code_line.replace("\n", "\r")
+            this_section_lines += 1
+        else:
+            secion_counter += 1
+            code_sections.append((secion_counter, this_code_section))
+            this_code_section = code_line.replace("\n", "\r")
+            this_section_lines = 1
+
+    # append the last section
+    secion_counter += 1
+    code_sections.append((secion_counter, this_code_section))
+
+    for (success, section_number, this_code_section, retStr) in pmac.sendSeries(
+        code_sections
+    ):
+        if not success:
+            return (
+                f"section{section_number}: {this_code_section.splitlines()[-1]} ---> {retStr}",
+                False,
+            )
+
+    n = len(code_lines)
+
+    return f" {n} lines" if n > 0 else "cleared", True
+
+
+def downloadCodeLinesOBS(pmac=None, module_code=[], section_size=20):
+    """
+    downloads pmac script to pmac
+
+    the script is devided into sections of section_size and sent to the pmac using sendCommand 
+
+    using sendCommand for sections, its 3x faster but sometimes code chunks get missing from download
+    
+    """
     code_lines = module_code.splitlines(True)
     code_sections = []
     this_code_section = ""
@@ -444,8 +521,6 @@ def downloadCodeLines(pmac=None, module_code=[], section_size=20):
     code_sections.append(this_code_section)
 
     for this_code_section in code_sections:
-        # while code_section.endswith("\n"):
-        #   code_section = code_section[:-1]
         retStr, success = pmac.sendCommand(this_code_section, shouldWait=True)
         if not success or errRegExp.findall(retStr) or len(retStr) < 1:
             return f"{this_code_section.splitlines()[-1]} ---> {retStr}", False
@@ -565,6 +640,53 @@ def uploadModule(
     code_module.setFromFirstName(first_name=module_first_name, cs_id=_CS)
 
     return code_module
+
+
+class stager:
+    times = ...  # type: list
+    time_laps = ...  # type: list
+    verbose_levels = ...  # type: list
+    verbose_level = ...  # type: int
+    print_end = ...  # type: str
+
+    print_close = ...  # type: str
+
+    def __init__(self, verbose_level=0, default_end=": ", default_close="*\n"):
+        self.times = []
+        self.verbose_level = verbose_level
+        self.print_end = default_end
+        self.verbose_levels = []
+        self.print_close = default_close
+
+    def stage(self, fstring=None, this_verbose_level=1, times=None, laps_time=True):
+
+        # new stage
+
+        if not fstring:
+            return False
+
+        if laps_time:
+            abbr_str = fstring.split()[0]
+            self.times.append([abbr_str, time(), this_verbose_level])
+            self.verbose_levels.append(this_verbose_level)
+
+            if len(self.times) > 1:
+
+                self.time_laps.append(
+                    (self.times[-2][0], round(self.times[-1][1] - self.times[-2][1], 3))
+                )
+
+                # close the last stage
+                if self.verbose_levels[-2] <= self.verbose_level:
+                    print(self.print_close, end="")
+
+            else:
+                self.time_laps = []
+
+        if this_verbose_level <= self.verbose_level:
+            print(fstring, end=self.print_end)
+
+        return True
 
 
 if __name__ == "__main__":

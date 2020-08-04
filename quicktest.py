@@ -59,11 +59,7 @@ if DEBUGGING:
     args.download_blank = True
     args.skip_failed_modules = True
     args.src_file = [
-        "/beamline/perforce/tec/mc/pmacUtil/trunk/pmc/PLC2_homing.pmc",
-        "/beamline/perforce/tec/mc/pmacUtil/trunk/pmc/PLC6_amplifier_initialize.pmc",
-        "/beamline/perforce/tec/mc/pmacUtil/trunk/pmc/PLC9_auto_cure.pmc",
-        "/beamline/perforce/tec/mc/pmacUtil/trunk/pmc/PLC5_diagnostics.pmc",
-        "/beamline/perforce/tec/mc/pmacUtil/trunk/pmc/BaseConfigNoAxes.pmc",
+        "/beamline/perforce/opa/int/ctrls/MET_MCS01/Settings/app/DynAp_CS.pmc",
         "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/WORKSHOP01_CS5_34YX.pmc",
         "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/WORKSHOP01_CS.pmc",
         "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/RaScan_CS_4_X-Y.pmc",
@@ -88,21 +84,24 @@ pmc_source_parsed_file = os.path.join(output_dir_base, "source.parsed.PMA")
 pmac_cs = "?"
 pmac_module = "NONE"
 
-print(
-    "reading from \n {} \n parsing and saving to \n {} ...".format(
-        src_full_path, pmc_source_parsed_file
-    ),
-    end="\n",
-) if (args.verbose > 2) else ()
 pmc_parser = ClsPmacParser()
 
+stager = pm.stager(verbose_level=args.verbose)
+
+stager.stage(f"Parsing {src_full_path}", this_verbose_level=1)
+
 if pmc_parser.parse(src_full_path):
+
+    stager.stage(
+        f"Saving to {pmc_source_parsed_file}", this_verbose_level=2, laps_time=False
+    )
+
     pmc_parser.saveOutput(outputFile=pmc_source_parsed_file)
-    print(pmc_parser.output) if args.verbose > 3 else ()
+    # print(pmc_parser.output) if args.verbose > 3 else ()
 else:
     exit(1)
 
-print("\nModularising parsed code", end="...\n\n") if args.verbose > 1 else ()
+stager.stage(f"Modularising parsed code", this_verbose_level=2)
 
 modules_dict = {}
 for module_full_name, code_module in pm.tpmacExtractModules(
@@ -121,9 +120,11 @@ for module_full_name, code_module in pm.tpmacExtractModules(
         output_dir_path=output_dir_base,
     )
 
-    print(f"saving source code to file {source_module_filename} ...", end="\n") if (
-        args.verbose > 3
-    ) else ()
+    stager.stage(
+        f"Saving source code to file {source_module_filename}",
+        this_verbose_level=4,
+        laps_time=False,
+    )
 
     saved_md5 = pm.savePmacModule(
         device_id=pmac_ip_address,
@@ -136,11 +137,11 @@ for module_full_name, code_module in pm.tpmacExtractModules(
 
 modules_sorted = OrderedDict(sorted(modules_dict.items()))
 
-if args.verbose > 1:
-    print(
-        f"\n{len(modules_sorted)} instances of module code found.",
-        end="------------ \n\n",
-    )
+stager.stage(
+    f"\n{len(modules_sorted)} instances of module code found.------------ \n\n",
+    this_verbose_level=2,
+    laps_time=False,
+)
 
 # # Now, see if you can further breakdown the globals:
 # _old_rx = tpmac.vxx_rx("[iI]", 1, mode="find")
@@ -153,16 +154,20 @@ if args.verbose > 1:
 # )
 # print("  {} instances of {} found".format(len(_matches), _old_rx))
 
+stager.stage(f"Connecting to tpmac at {pmac_ip_address}", this_verbose_level=0)
 
-if args.verbose > 1:
-    print(f"\nConnecting to tpmac at {pmac_ip_address}", end="...\n\n")
 pmac1 = PmacEthernetInterface(verbose=False, numAxes=8, timeout=3)
 pmac1.setConnectionParams(pmac_ip_address, 1025)
 pmac1.connect()
+
+stager.stage("Waiting", this_verbose_level=4)
+
 sleep(1)
 
 if args.download:
-    print("\nDownloading to tpmac...", end="...\n\n")
+
+    stager.stage("Downloading to tpmac...", this_verbose_level=0)
+
     for module_full_name, code_module in modules_sorted.items():
         if module_full_name.endswith(pm.freeCodeSuffix) and not args.download_tailing:
             print(f"-- skiped   {module_full_name} (tailings)", end="\n") if (
@@ -171,14 +176,18 @@ if args.download:
             continue
 
         if not code_module.body and not args.download_blank:
-            print(f"-- skiped   {module_full_name} (blank)", end="\n") if (
-                args.verbose > 1
-            ) else ()
+
+            stager.stage(
+                f"-- skipped   {module_full_name} (blank)",
+                this_verbose_level=2,
+                laps_time=False,
+            )
+
             continue
 
-        print(f"downloading {module_full_name}", end="...") if (
-            args.verbose > 1
-        ) else ()
+        stager.stage(
+            f"Downloading {module_full_name}", this_verbose_level=2, laps_time=False,
+        )
 
         (returned_msg, downloadSuccess, close_msg, closeSuccess,) = pm.downloadModule(
             pmac=pmac1, code_module=code_module
@@ -197,10 +206,10 @@ if args.download:
 # pmac1.getIVars(100, [31, 32, 33])
 # pmac1.sendSeries(['ver', 'list plc3'])
 
-print(
-    f"\n\nuploading listed modules from {pmac1.getPmacModel()} at {pmac_ip_address}",
-    end="...\n",
-) if (args.verbose > 1) else ()
+stager.stage(
+    f"Uploading listed modules from {pmac1.getPmacModel()} at {pmac_ip_address}",
+    this_verbose_level=2,
+)
 
 for module_full_name in modules_sorted:
     if module_full_name.endswith(pm.freeCodeSuffix):
@@ -212,7 +221,9 @@ for module_full_name in modules_sorted:
     else:
         # upload module code
 
-        print(f"uploading {module_full_name}", end="...") if (args.verbose > 1) else ()
+        stager.stage(
+            f"Uploading {module_full_name}", this_verbose_level=2, laps_time=False,
+        )
 
         # if this is a PLC or Porgram, and the return of the characters may exceed 1400 bytes,
         # then list it line by line using this format: LIST {module},{line_no}
@@ -230,10 +241,11 @@ for module_full_name in modules_sorted:
             output_dir_path=output_dir_base,
         )
 
-        print(
-            "\n saving uploaded code to file {}".format(uploaded_module_filename),
-            end="\n",
-        ) if (args.verbose > 3) else ()
+        stager.stage(
+            f"Saving uploaded code to file {uploaded_module_filename}",
+            this_verbose_level=4,
+            laps_time=False,
+        )
 
         uploaded_module_md5 = pm.savePmacModule(
             device_id=pmac_ip_address,
@@ -262,11 +274,19 @@ for module_full_name in modules_sorted:
             # if args.verbose > 3:
             #     diff_list = [li for li in difflib.ndiff(_src, _upl) if li[0] != ' ']
             #     print(diff_list)
-            if args.verbose > 4:
-                print("source: \n{} \n\n uploaded: \n{} \n\n".format(_src, _upl))
 
+            stager.stage(
+                f"source: \n{_src} \n\n uploaded: \n{_upl} \n\n",
+                this_verbose_level=5,
+                laps_time=False,
+            )
 
 print(f"\noutput dumped in {output_dir_base}")
+
+stager.stage(f"Done.", this_verbose_level=0)
+
+print(f"\n\ntime lapses in seconds: {stager.time_laps}")
+
 print("program terminated.")
 
 exit(0)
