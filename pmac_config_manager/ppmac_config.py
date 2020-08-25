@@ -90,7 +90,7 @@ def ppmacExtractModules(
 
         if not associates_of_associates.issubset(associates):
 
-            raise RuntimeWarning(f"Unexpected dependency: {associates_of_associates}")
+            print(f"Unexpected dependency: {associates_of_associates}")
 
     axis_settings = motor_settings
     axis_settings.update(associate_settings)
@@ -102,21 +102,23 @@ def ppmacExtractModules(
         companion_index = motor_index + 8
         enctable_index = motor_index
         # find L1 as Motor index
-
         index_settings = [
             ("L1", f"{motor_index} //Motor[{motor_index}]"),
             ("L2", f"{gate_index} //PowerBrick[{gate_index}]"),
             ("L3", f"{chan_index} //Chan[{chan_index}]"),
-            ("L4", "L2 // 2nd gate"),
-            ("L5", "L3 // 2nd chan"),
+            ("L4", "L2 // secondary gate"),
+            ("L5", "L3 // secondary chan"),
             ("L6", "L1 - 1 // motor addressed from 0"),
-            ("L7", f"{companion_index} // companion axis bla bla"),
+            ("L7", f"{companion_index} // companion axis {companion_index}"),
             ("L8", f"{enctable_index} //EncTable[{enctable_index}]"),
         ]
 
         # replace instances of Motor[]
 
         for index_setting in index_settings:
+
+            # insert index value at top
+
             _find = index_setting[1].split(linecomment_prefix)[1]
             _replace = _find.replace(
                 f"[{index_setting[1].split(linecomment_prefix)[0].strip()}]",
@@ -131,6 +133,12 @@ def ppmacExtractModules(
                 for axis_setting in axis_settings
             ]
 
+        # now add the index settings at top as the header to specify the motor settings
+
     axis_settings_dict = OrderedDict(sorted(axis_settings))
 
-    return axis_settings_dict
+    all_settings = list(axis_settings_dict.items())
+    for index_setting in reversed(index_settings):
+        all_settings.insert(0, index_setting)
+
+    return all_settings
