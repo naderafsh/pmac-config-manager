@@ -51,18 +51,18 @@ P999=8
 
 ; Add the axis specific i-variables
 ;Axis 1 Linear X
-#include "app/SR05ID01HW513_X_MTR.e.pmc"
+; #include "app/SR05ID01HW513_X_MTR.e.pmc"
 ;Axis 2 Y
 #include "app/SR05ID01HW513_Y_MTR.e.pmc"
 
 ;Axis 3 Z
-#include "app/SR05ID01HW513_Z_MTR.e.pmc"
+; #include "app/SR05ID01HW513_Z_MTR.e.pmc"
 
 ;Axis 4 R
-#include "app/SR05ID01HW513_R_MTR.e.pmc"
+; #include "app/SR05ID01HW513_R_MTR.e.pmc"
 
 ;Axis 5 TBL 1
-#include "app/SR05ID01IOC51_MTR21.e.pmc"
+; #include "app/SR05ID01IOC51_MTR21.e.pmc"
 ;Axis 6 TBL 2
 #include "app/SR05ID01IOC51_MTR22.e.pmc"
 
@@ -72,16 +72,16 @@ END Gat
 DEL Gat 
 DEL ROT
 
-#include "app/RaScan_Prog.pmc"
+; #include "app/RaScan_Prog.pmc"
 
 ;; #include "app/RaScan2_Prog.pmc"
 
 
-#include "app/RaScan_CS_5_XZ-Y.pmc"
-#include "app/RaScan_CS_4_X-Y.pmc"
-#include "app/RaScan_CS_6_TX-Y.pmc"
+;#include "app/RaScan_CS_5_XZ-Y.pmc"
+;#include "app/RaScan_CS_4_X-Y.pmc"
+;#include "app/RaScan_CS_6_TX-Y.pmc"
 
-#include "RaScan_Setup.pmc"
+;#include "RaScan_Setup.pmc"
 
 I15 =  0  ;Deg (not Rad) Control for User Trig. Functions
 i5350=1

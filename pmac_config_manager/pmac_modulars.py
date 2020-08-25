@@ -178,7 +178,7 @@ def tpmcBufferSyntax(src):
         ("GOSUB", "GOS"),
         ("GOTO", "GOT"),
         ("OR", "OR"),
-        ("RETURN", "RET "),
+        ("RETURN", "RET"),
         ("WHILE", "WHILE"),
     ]
     # remove buffer commands from source

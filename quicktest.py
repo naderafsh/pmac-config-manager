@@ -51,6 +51,8 @@ args = parser.parse_args()
 if DEBUGGING:
     args.out_dir = str(Path.home()) + "/tcm_dump"  # use source dir
 
+    args.out_dir = "tests/_dump"  # use source dir
+
     args.pmac_ip = "10.23.199.230"
     # args.pmac_ip = '10.23.207.9'
     args.download = True  # For this test file, False means just verify
@@ -65,7 +67,7 @@ if DEBUGGING:
         "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/RaScan_CS_4_X-Y.pmc",
         "tests/tpmac-code-sample/Master.pmc",
         "tests/tpmac-code-sample/RaScan_Master.pmc",
-    ][-2]
+    ][-1]
     args.verbose = 2
 
 
