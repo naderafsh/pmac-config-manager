@@ -31,7 +31,7 @@ parser.add_argument(
     "-i", "--pmac_ip", type=str, required=not DEBUGGING, help="pmac ip address"
 )
 parser.add_argument(
-    "-v", "--verbose", type=int, default=2, help="bluecat verbocity level range 0 to 4"
+    "-v", "--verbose", type=int, default=2, help="verbocity level range 0 to 4"
 )
 parser.add_argument(
     "-s", "--src_file", type=str, required=not DEBUGGING, help="source file name"
@@ -55,7 +55,7 @@ if DEBUGGING:
 
     args.pmac_ip = "10.23.199.230"
     # args.pmac_ip = '10.23.207.9'
-    args.download = True  # For this test file, False means just verify
+    args.download = False  # For this test file, False means just verify
     # fix this before turning it on
     args.download_tailing = False
     args.download_blank = True
@@ -67,6 +67,7 @@ if DEBUGGING:
         "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/RaScan_CS_4_X-Y.pmc",
         "tests/tpmac-code-sample/Master.pmc",
         "tests/tpmac-code-sample/RaScan_Master.pmc",
+        "tests/tpmac-code-sample/base/PLC2_homing.pmc",
     ][-1]
     args.verbose = 2
 
@@ -101,7 +102,7 @@ if pmc_parser.parse(src_full_path):
     pmc_parser.saveOutput(outputFile=pmc_source_parsed_file)
     # print(pmc_parser.output) if args.verbose > 3 else ()
 else:
-    exit(1)
+    raise RuntimeError(f"parser returned error.")
 
 stager.stage(f"Modularising parsed code", this_verbose_level=2)
 
@@ -209,7 +210,7 @@ if args.download:
 # pmac1.sendSeries(['ver', 'list plc3'])
 
 stager.stage(
-    f"Uploading listed modules from {pmac1.getPmacModel()} at {pmac_ip_address}",
+    f"Uploading listed modules from {pmac1.getPmacModel()} at {pmac_ip_address}\n",
     this_verbose_level=2,
 )
 
@@ -289,6 +290,5 @@ stager.stage(f"Done.", this_verbose_level=0)
 
 print(f"\n\ntime lapses in seconds: {stager.time_laps}")
 
-print("program terminated.")
+input("press any key to quit.")
 
-exit(0)

@@ -129,7 +129,7 @@ HomingBackupGroup = 0
 OPEN PLC2 CLEAR
 
 ;------------ EXEC ----------
-TimeOut = (1+RequestWait)*1000
+TimeOut = (5+RequestWait)*1000
 if (TimeOut > 5*60000) 
 	TimeOut = 5*60000
 endif

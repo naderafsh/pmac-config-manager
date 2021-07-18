@@ -564,7 +564,9 @@ def uploadModule(
             upload_error = _code_lines
             break
 
-        _code_lines = _code_lines[:-1]
+        # TODO: check if uppercase for all
+        # uplpoaded code is not problematic
+        _code_lines = _code_lines[:-1].upper()
         _code_lines = re.sub(r"\r", "\n", _code_lines, flags=re.IGNORECASE)
         # and remove the RET at the end of the buffer
         if _code_lines.endswith("RET\n"):
