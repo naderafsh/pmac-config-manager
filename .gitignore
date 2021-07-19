@@ -1,8 +1,16 @@
+*.lock
+*.rar
+logs/
 # my own dump
 *_dump
+*_out
+*_local
+
+#excel temp files
+~*
 
 # VSCode
-.vscode/
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

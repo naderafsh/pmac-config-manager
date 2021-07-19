@@ -53,7 +53,7 @@ if DEBUGGING:
 
     args.out_dir = "tests/_dump"  # use source dir
 
-    args.pmac_ip = "10.23.199.230"
+    args.pmac_ip = "10.114.32.2"
     # args.pmac_ip = '10.23.207.9'
     args.download = False  # For this test file, False means just verify
     # fix this before turning it on
@@ -61,13 +61,8 @@ if DEBUGGING:
     args.download_blank = True
     args.skip_failed_modules = True
     args.src_file = [
-        "/beamline/perforce/opa/int/ctrls/MET_MCS01/Settings/app/DynAp_CS.pmc",
-        "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/WORKSHOP01_CS5_34YX.pmc",
-        "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/WORKSHOP01_CS.pmc",
-        "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/RaScan_CS_4_X-Y.pmc",
-        "tests/tpmac-code-sample/Master.pmc",
-        "tests/tpmac-code-sample/RaScan_Master.pmc",
-        "tests/tpmac-code-sample/base/PLC2_homing.pmc",
+        "tests/local_test_master.pmc",
+        "/beamline/perforce/tec/mc/pmacUtil/trunk/pmc/BaseConfigNoAxes.pmc",
     ][-1]
     args.verbose = 2
 
@@ -102,9 +97,9 @@ if pmc_parser.parse(src_full_path):
     pmc_parser.saveOutput(outputFile=pmc_source_parsed_file)
     # print(pmc_parser.output) if args.verbose > 3 else ()
 else:
-    raise RuntimeError(f"parser returned error.")
+    raise RuntimeError("parser returned error.")
 
-stager.stage(f"Modularising parsed code", this_verbose_level=2)
+stager.stage("Modularising parsed code", this_verbose_level=2)
 
 modules_dict = {}
 for module_full_name, code_module in pm.tpmacExtractModules(
@@ -286,9 +281,8 @@ for module_full_name in modules_sorted:
 
 print(f"\noutput dumped in {output_dir_base}")
 
-stager.stage(f"Done.", this_verbose_level=0)
+stager.stage("Done.", this_verbose_level=0)
 
 print(f"\n\ntime lapses in seconds: {stager.time_laps}")
 
-input("press any key to quit.")
-
+input("press any key to quit...")
