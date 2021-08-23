@@ -1,3 +1,5 @@
+from re import A
+from typing import IO
 from dls_pmaclib.dls_pmacremote import PmacEthernetInterface
 from dls_pmaclib.dls_pmcpreprocessor import ClsPmacParser
 from collections import OrderedDict
@@ -6,13 +8,15 @@ from pathlib import Path
 from argparse import ArgumentParser
 from time import sleep
 from pmac_config_manager import pmac_modulars as pm
+import yaml as ym
+import time
 
 """
 A proof of concept for a base-overlay model to manage configuration of pmac controllers.
 
 baseConfig is a default and common configuration that enables basic functions (mainly via pmacUtil)
 and also provides some tools for managing overlay configurations.
-This is mainly downloaded and maintained via IDE.
+This is mainly download_attempt and maintained via IDE.
 
 Idea is to put all overlay configs into pmac modules, e.g. PLCs, PROGs, and kinematics. Axis
 overlay configs are also done via dedicated configurator PLC's.
@@ -22,6 +26,124 @@ PLC1 calls the configratur PLC's at startup.
 A checksum can be applied to verifyu the integrity of the configurator PLC's to add to reliability.
 
 """
+
+
+def yaml_dump():
+    """construct a string only dict off modules_sorted
+    as a report, then dumps it into a yaml file.
+    """
+    yaml_dump_file = os.path.join(output_dir_base, "config_check_log.yaml")
+
+    if os.path.exists(yaml_dump_file):
+
+        with open(yaml_dump_file, "r") as yamlfile:
+            report_dict = ym.safe_load(yamlfile)  # Note the safe_load
+    else:
+        report_dict = {}
+
+    if not isinstance(report_dict, dict):
+        # wrong or empty yaml record
+        report_dict = {}
+
+    module_dict = {}
+    any_errors = False
+    for module_full_name in modules_sorted:
+        report_module = {}
+        code_module = modules_sorted[module_full_name]
+        assert isinstance(code_module, pm.codeModule)
+
+        report_module["download_attempt"] = code_module.download_attempt
+        report_module["download_msg"] = code_module.download_msg
+        report_module["download_failed"] = code_module.download_failed
+        # report_module["checksum"] = code_module.checksum
+        report_module["type"] = code_module.module_type
+        report_module["verified"] = code_module.verified
+
+        any_errors = any_errors and code_module.verified and (not code_module.download_failed)
+
+        module_dict[module_full_name] = report_module
+
+    pmac_dict = {}
+
+    pmac_dict["modules"] = module_dict
+    pmac_dict["saved"] = pmac_saved
+    pmac_dict["reset"] = pmac_reset
+    pmac_dict["errors"] = any_errors
+    pmac_dict["last_update"] = time.strftime("%y%m%d_%H%M", time.localtime())
+
+    report_dict[pmac_ip_address] = pmac_dict
+
+    with open(yaml_dump_file, "w+") as yamlfile:
+        ym.safe_dump(report_dict, yamlfile, default_flow_style=False)
+
+
+def download(module_full_name, code_module):
+
+    reason_for_skip = ""
+
+    if module_full_name.endswith(pm.freeCodeSuffix) and not args.download_tailing:
+        reason_for_skip = "tailings"
+
+    if not code_module.body and not args.download_blank:
+        reason_for_skip = "blank"
+
+    if download.skip_all:
+        reason_for_skip = "user-all"
+
+    if not reason_for_skip:
+        userinp = input(f"{module_full_name} ... [S]kip/skip[A]ll/download ")
+
+        if userinp == "A":
+            download.skip_all = True
+            reason_for_skip = "user-all"
+        elif userinp == "S":
+            reason_for_skip = "user"
+
+    if reason_for_skip:
+        stager.stage(
+            f"-- skipped  {module_full_name} ({reason_for_skip}) \n",
+            this_verbose_level=2,
+            laps_time=False,
+        )
+        code_module.download_msg = f"skipped - {reason_for_skip}"
+        code_module.download_attempt = False
+        return
+
+    stager.stage(
+        f"Downloading {module_full_name}", this_verbose_level=2, laps_time=False,
+    )
+
+    (returned_msg, downloadSuccess, close_msg, closeSuccess,) = pm.downloadModule(
+        pmac=pmac1, code_module=code_module
+    )
+
+    if not downloadSuccess:
+        print(f"error: {returned_msg}", end="...")
+        code_module.download_msg = f"failed: - {returned_msg}"
+        code_module.download_attempt = True
+    else:
+        print(f"{returned_msg}", end="...")
+        code_module.download_msg = f"success: - {returned_msg}"
+        code_module.download_attempt = True
+
+    if not closeSuccess:
+        print(f"failed to close: {close_msg}", end="\n")
+    else:
+        print("closed.", end="\n")
+
+
+def parsing():
+
+    if pmc_parser.parse(src_full_path):
+
+        stager.stage(
+            f"Saving to {pmc_source_parsed_file}", this_verbose_level=2, laps_time=False
+        )
+
+        pmc_parser.saveOutput(outputFile=pmc_source_parsed_file)
+        # print(pmc_parser.output) if args.verbose > 3 else ()
+    else:
+        raise RuntimeError("parser returned error.")
 
 
 DEBUGGING = True
@@ -53,17 +175,20 @@ if DEBUGGING:
 
     args.out_dir = "tests/_dump"  # use source dir
 
-    args.pmac_ip = "10.114.32.2"
+    args.pmac_ip = "10.23.199.230"
     # args.pmac_ip = '10.23.207.9'
-    args.download = False  # For this test file, False means just verify
+    args.download = True  # For this test file, False means just verify
     # fix this before turning it on
     args.download_tailing = False
-    args.download_blank = True
+    args.download_blank = False
     args.skip_failed_modules = True
     args.src_file = [
         "tests/local_test_master.pmc",
         "/beamline/perforce/tec/mc/pmacUtil/trunk/pmc/BaseConfigNoAxes.pmc",
-    ][-1]
+        "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/WORKSHOP01_CS5_34YX.pmc",
+        "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/AS_CS_3jack_demo.pmc",
+        "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/MC-268-test.pmc",
+    ][0]
     args.verbose = 2
 
 
@@ -84,20 +209,11 @@ pmac_module = "NONE"
 
 pmc_parser = ClsPmacParser()
 
-stager = pm.stager(verbose_level=args.verbose)
+stager = pm.stager(verbose_level=args.verbose, default_end=" > ")
 
 stager.stage(f"Parsing {src_full_path}", this_verbose_level=1)
+parsing()
 
-if pmc_parser.parse(src_full_path):
-
-    stager.stage(
-        f"Saving to {pmc_source_parsed_file}", this_verbose_level=2, laps_time=False
-    )
-
-    pmc_parser.saveOutput(outputFile=pmc_source_parsed_file)
-    # print(pmc_parser.output) if args.verbose > 3 else ()
-else:
-    raise RuntimeError("parser returned error.")
 
 stager.stage("Modularising parsed code", this_verbose_level=2)
 
@@ -162,47 +278,15 @@ stager.stage("Waiting", this_verbose_level=4)
 
 sleep(1)
 
-if args.download:
-
-    stager.stage("Downloading to tpmac...", this_verbose_level=0)
-
-    for module_full_name, code_module in modules_sorted.items():
-        if module_full_name.endswith(pm.freeCodeSuffix) and not args.download_tailing:
-            print(f"-- skiped   {module_full_name} (tailings)", end="\n") if (
-                args.verbose > 1
-            ) else ()
-            continue
-
-        if not code_module.body and not args.download_blank:
-
-            stager.stage(
-                f"-- skipped   {module_full_name} (blank)",
-                this_verbose_level=2,
-                laps_time=False,
-            )
-
-            continue
-
-        stager.stage(
-            f"Downloading {module_full_name}", this_verbose_level=2, laps_time=False,
-        )
-
-        (returned_msg, downloadSuccess, close_msg, closeSuccess,) = pm.downloadModule(
-            pmac=pmac1, code_module=code_module
-        )
-
-        if not downloadSuccess:
-            print(f"error: {returned_msg}", end="...")
-        else:
-            print(f"{returned_msg}", end="...")
-
-        if not closeSuccess:
-            print(f"failed to close: {close_msg}", end="\n")
-        else:
-            print("closed.", end="\n")
-
 # pmac1.getIVars(100, [31, 32, 33])
 # pmac1.sendSeries(['ver', 'list plc3'])
+
+
+if args.download:
+    download.skip_all = False
+    stager.stage("Downloading to tpmac...", this_verbose_level=0)
+    for module_full_name, code_module in modules_sorted.items():
+        download(module_full_name, code_module)
 
 stager.stage(
     f"Uploading listed modules from {pmac1.getPmacModel()} at {pmac_ip_address}\n",
@@ -254,6 +338,12 @@ for module_full_name in modules_sorted:
             user_time_in_header=True,
         )
 
+        # TODO: save a catalog in the dump directory
+
+        # report dict structure:
+        # module name
+        #  .
+
         if modules_sorted[module_full_name].checksum == uploaded_module_md5:
             # checksums match, hooray!
             modules_sorted[module_full_name].verified = True
@@ -261,7 +351,7 @@ for module_full_name in modules_sorted:
                 if len(upl_code_module.body) < 1:
                     print("blank", end="...")
                 else:
-                    print("loaded", end="...")
+                    print("code found", end="...")
                 print("verified.")
         else:
             modules_sorted[module_full_name].verified = False
@@ -279,10 +369,29 @@ for module_full_name in modules_sorted:
                 laps_time=False,
             )
 
+
 print(f"\noutput dumped in {output_dir_base}")
+
+stager.stage("\nRecording report", this_verbose_level=0)
 
 stager.stage("Done.", this_verbose_level=0)
 
 print(f"\n\ntime lapses in seconds: {stager.time_laps}")
 
-input("press any key to quit...")
+
+pmac_reset = False
+pmac_saved = False
+userinp = input("[R]est / [S]ave or quit...")
+
+if userinp == "R":
+    print(f"resetting {pmac_ip_address} ...")
+    pmac1.sendCommand("$$$", shouldWait=False)
+    pmac_saved = True
+    sleep(5)
+elif userinp == "S":
+    print(f"saving {pmac_ip_address} ...")
+    pmac1.sendCommand("sav", shouldWait=False)
+    pmac_reset = True
+    sleep(5)
+
+yaml_dump()

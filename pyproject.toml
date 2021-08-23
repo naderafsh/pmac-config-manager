@@ -10,6 +10,7 @@ dls-pmaclib = {git = "https://github.com/dls-controls/dls-pmac-lib.git", rev = "
 
 black = "^19.10b0"
 numpy = "^1.18.4"
+pyyaml = "^5.4.1"
 
 [tool.poetry.dev-dependencies]
 pylint = "^2.5.2"

@@ -27,6 +27,8 @@ class codeModule:
     download_failed = ...  # type: bool
     verified = ...  # type: bool
     module_type = ...  # type: str
+    download_attempt = ...  # type: bool
+    download_msg = ...  # type: str
 
     def __init__(
         self,
@@ -56,6 +58,8 @@ class codeModule:
 
         self.verified = False
         self.download_failed = False
+        self.download_attempt = False
+        self.download_msg = ""
 
         self.setBody(body)
 
@@ -309,6 +313,7 @@ def tpmacExtractModules(code_source="", include_tailing=True):
     _CS = None
     global_full_name = "CS0_GLOBAL" + freeCodeSuffix
     current_global = codeModule()
+    current_global.module_type = "tailing"
     for i, code_line in enumerate(code_source):
         if len(code_line) < 1:
             continue
