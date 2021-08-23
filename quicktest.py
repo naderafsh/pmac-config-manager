@@ -45,7 +45,16 @@ def yaml_dump():
         # wrong or empty yaml record
         report_dict = {}
 
-    module_dict = {}
+    if pmac_ip_address in report_dict:
+        verify_dict = report_dict[pmac_ip_address]
+        if "modules" in verify_dict:
+            module_dict = verify_dict["modules"]
+        else:
+            module_dict = {}
+    else:
+        verify_dict = {}
+        module_dict = {}
+
     any_errors = False
     for module_full_name in modules_sorted:
         report_module = {}
@@ -59,19 +68,33 @@ def yaml_dump():
         report_module["type"] = code_module.module_type
         report_module["verified"] = code_module.verified
 
-        any_errors = any_errors and code_module.verified and (not code_module.download_failed)
+        report_module["last_update"] = time.strftime("%y%m%d_%H%M", time.localtime())
+        report_module["source"] = src_full_path
 
+        report_module["saved"] = pmac_saved
+        report_module["reset"] = pmac_reset
+
+        any_errors = (
+            any_errors or (not code_module.verified) or code_module.download_failed
+        )
+
+        # overwrite the module record
         module_dict[module_full_name] = report_module
 
-    pmac_dict = {}
+    verify_dict["modules"] = module_dict
+    verify_dict["last_update"] = time.strftime("%y%m%d_%H%M", time.localtime())
+    if pmac_saved:
+        verify_dict["last_saved"] = verify_dict["last_update"]
+    if pmac_reset:
+        verify_dict["last_reset"] = verify_dict["last_update"]
 
-    pmac_dict["modules"] = module_dict
-    pmac_dict["saved"] = pmac_saved
-    pmac_dict["reset"] = pmac_reset
-    pmac_dict["errors"] = any_errors
-    pmac_dict["last_update"] = time.strftime("%y%m%d_%H%M", time.localtime())
+    verify_dict["last_errors"] = any_errors
 
-    report_dict[pmac_ip_address] = pmac_dict
+    verify_dict["last_source"] = src_full_path
+
+    source_dict = {os.path.basename(src_full_path): verify_dict}
+
+    report_dict[pmac_ip_address] = verify_dict
 
     with open(yaml_dump_file, "w+") as yamlfile:
         ym.safe_dump(report_dict, yamlfile, default_flow_style=False)
@@ -188,7 +211,7 @@ if DEBUGGING:
         "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/WORKSHOP01_CS5_34YX.pmc",
         "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/AS_CS_3jack_demo.pmc",
         "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/MC-268-test.pmc",
-    ][0]
+    ][3]
     args.verbose = 2
 
 
