@@ -100,7 +100,7 @@ def yaml_dump():
         ym.safe_dump(report_dict, yamlfile, default_flow_style=False)
 
 
-def download(module_full_name, code_module, dont_ask=False):
+def download(module_full_name, code_module, default_download_choice=""):
 
     reason_for_skip = ""
 
@@ -116,8 +116,8 @@ def download(module_full_name, code_module, dont_ask=False):
     if not reason_for_skip:
         userinp = (
             input(f"{module_full_name} ... [S]kip/skip[A]ll/download ")
-            if not dont_ask
-            else "D"
+            if not default_download_choice
+            else default_download_choice
         )
 
         if userinp == "A":
@@ -197,6 +197,7 @@ def readYamlArgs(yaml_args_path):
     args.skip_failed_modules = run_args["skip_failed_modules"]
     args.src_file = run_args["src_file"]
     args.verbose = run_args["verbose"]
+    args.default_download_choice = run_args["default_download_choice"]
 
 
 parser = ArgumentParser(description="download and analyse pmac code, by modules.")
@@ -323,7 +324,11 @@ if args.download:
     download.skip_all = False
     stager.stage("Downloading to tpmac...", this_verbose_level=0)
     for module_full_name, code_module in modules_sorted.items():
-        download(module_full_name, code_module, dont_ask="A")
+        download(
+            module_full_name,
+            code_module,
+            default_download_choice=args.default_download_choice,
+        )
 
 stager.stage(
     f"Uploading listed modules from {pmac1.getPmacModel()} at {pmac_ip_address}\n",
@@ -332,6 +337,7 @@ stager.stage(
 
 for module_full_name in modules_sorted:
     if module_full_name.endswith(pm.freeCodeSuffix):
+        # how to upload free code:
         modules_sorted[module_full_name].verified = False
     elif args.skip_failed_modules and modules_sorted[module_full_name].download_failed:
         print(f"-- skiped {module_full_name} (failed downloads)", end="\n") if (

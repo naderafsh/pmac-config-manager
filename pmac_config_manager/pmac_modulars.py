@@ -73,7 +73,7 @@ class codeModule:
             self.module_type = self.first_name
             self.module_sp = ""
             self.open_cmd = f"&{cs_id}A OPEN {self.module_type} CLEAR\n"
-            self.close_cmd = f"CLOSE\n"
+            self.close_cmd = "CLOSE\n"
         else:
             self.setFromCodeLine(code_line="OPEN " + first_name, _CS=cs_id)
 
@@ -87,7 +87,7 @@ class codeModule:
         if self.module_type in cs_module_types:
             self.module_sp = ""
             self.open_cmd = f"&{_CS}A OPEN {self.module_type} CLEAR\n"
-            self.close_cmd = f"CLOSE\n"
+            self.close_cmd = "CLOSE\n"
         # module is not CS dependent
         else:
             # need a number to specify the module
@@ -98,10 +98,10 @@ class codeModule:
                     self.open_cmd = (
                         f"A OPEN {self.module_type} {self.module_sp} CLEAR\n"
                     )
-                    self.close_cmd = f"CLOSE\n"
+                    self.close_cmd = "CLOSE\n"
                 else:
                     self.open_cmd = f"DISABLE {self.module_type} {self.module_sp} OPEN {self.module_type} {self.module_sp} CLEAR\n"
-                    self.close_cmd = f"CLOSE\n"
+                    self.close_cmd = "CLOSE\n"
             else:
                 raise RuntimeError(f"ERROR: unspecified module name: {code_line}")
 
@@ -141,7 +141,6 @@ def stripRgx(text, rgx_to_strip=" +", exclude_quote='"'):
 def stripInBrackets(_src, brackets="()", to_strip=" \n\t\r"):
     """
     removes all white-spaces within brackets
-    
     """
 
     # TODO make this hack code pythonic
@@ -161,7 +160,6 @@ def stripInBrackets(_src, brackets="()", to_strip=" \n\t\r"):
 def tpmcBufferSyntax(src):
     """
     modifies syntax of the script to match the tpmac stored code as retreives using List command
-    
     """
 
     resevered_words = r"[\>,\<,\!,\(,\),=,+,\-,*,/,\n]"
@@ -188,7 +186,7 @@ def tpmcBufferSyntax(src):
     # remove buffer commands from source
     src = re.sub(r"clear\s", "", src, flags=re.IGNORECASE)
 
-    ## trim extra tabs and spaces
+    # trim extra tabs and spaces
 
     # add a dumy line to ensure regex searches find keywords. remoe it at the end.
     src = "\t" + src
@@ -312,8 +310,11 @@ def tpmacExtractModules(code_source="", include_tailing=True):
     code_order = 0
     _CS = None
     global_full_name = "CS0_GLOBAL" + freeCodeSuffix
-    current_global = codeModule()
-    current_global.module_type = "tailing"
+    current_tailings = codeModule()
+    current_tailings.module_type = "tailing"
+    current_tailings.open_cmd = ""
+    current_tailings.close_cmd = ""
+
     for i, code_line in enumerate(code_source):
         if len(code_line) < 1:
             continue
@@ -411,14 +412,21 @@ def tpmacExtractModules(code_source="", include_tailing=True):
                 source_module_code += code_line + "\n"
             else:
                 # non-module settings all go to
-                current_global.body += code_line + "\n"
-                current_global.code_order = code_order
+                # check if this is a setting
+                # simplest check is if it contains "="  .
+                if "=" in code_line:
+                    current_tailings.body += code_line + "\n"
+                    current_tailings.code_order = code_order
+                else:
+                    pass
+                    # all other code are ignored!!!
+                    # e.g. -> definitions, etc   .
 
     # return _tailing module if needed
     if include_tailing and global_full_name:
         # verify so that the checksum is make
-        current_global.verify()
-        yield global_full_name, current_global
+        current_tailings.verify()
+        yield global_full_name, current_tailings
 
     return
 
@@ -444,10 +452,10 @@ def downloadCodeLines(pmac=None, module_code=[], section_size=1):
     """
     downloads pmac script to pmac
 
-    the script is devided into sections of section_size and sent to the pmac using sendCommand 
+    the script is devided into sections of section_size and sent to the pmac using sendCommand
 
-    this was an attempt to use sendSeries. It frequently fails to write into buffers returning ERR005, indicating buffer gets closed while downloading.
-    
+    this was an attempt to use sendSeries. It frequently fails to write into buffers returning ERR005,
+    indicating buffer gets closed while downloading.
     """
     code_lines = module_code.splitlines(True)
     code_sections = []
@@ -488,10 +496,10 @@ def downloadCodeLinesOBS(pmac=None, module_code=[], section_size=20):
     """
     downloads pmac script to pmac
 
-    the script is devided into sections of section_size and sent to the pmac using sendCommand 
+    the script is devided into sections of section_size and sent to the pmac using sendCommand
 
     using sendCommand for sections, its 3x faster but sometimes code chunks get missing from download
-    
+
     """
     code_lines = module_code.splitlines(True)
     code_sections = []
@@ -521,6 +529,9 @@ def downloadCodeLinesOBS(pmac=None, module_code=[], section_size=20):
 
 
 def downloadModule(pmac=None, code_module=codeModule()):
+    """downloads a code module body.
+    for non LIST able free settings code_module.open_cmd and code_module.close_cmd shall be blank
+    """
 
     # send open commands
     return_message, success = downloadCodeLines(pmac, code_module.open_cmd)
@@ -540,6 +551,8 @@ def downloadModule(pmac=None, code_module=codeModule()):
 def uploadModule(
     pmac, module_full_name, wait_secs=0.15, bunch_size=100, end_code="ERR003"
 ):
+
+    """uploads LIST able module using full name"""
 
     _CS, module_first_name = pmacModuleName(module_full_name)
 
