@@ -325,7 +325,7 @@ stager.stage(
 )
 
 for module_full_name in modules_sorted:
-    if module_full_name.endswith("globals"):
+    if modules_sorted[module_full_name].module_type == "globals":
         # how to upload free code:
         modules_sorted[module_full_name].verified = False
         stager.stage(

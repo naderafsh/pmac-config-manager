@@ -415,7 +415,7 @@ def tpmacExtractModules(code_source="", include_globals=True):
                 # check if this is a setting
                 # simplest check is if it contains "="  .
                 if "=" in code_line:
-                    current_globals.body += code_line.replace(" ", "") + "\n"
+                    current_globals.body += code_line + "\n"
                     current_globals.code_order = code_order
                 else:
                     pass
@@ -424,9 +424,74 @@ def tpmacExtractModules(code_source="", include_globals=True):
 
     # return _globals module if needed
     if include_globals and global_full_name:
-        # verify so that the checksum is make
-        current_globals.verify()
-        yield global_full_name, current_globals
+        # now extract gloabal modules
+        # from within globals, like I1xx and Pxxx.
+
+        global_modules = {}
+
+        for _code_line in current_globals.body.splitlines():
+            _left_side = _code_line.split("=")[0]
+            myset = re.findall(r"([A-Z])(\d+)", _left_side)[0]
+            family_char = myset[0]
+            index_int = int(int(myset[1]) / 100)
+
+            # if index_int > 49:
+            #     # these are I5sx, I7mnx and I8mxx
+            #     # collate all of them under 50, 60, 70, 80 and 90
+            #     index_int =  * 10int(index_int / 10)
+
+            first_name = (
+                f"{family_char}{index_int}xx"
+                if (index_int < 50) or (family_char != "I")
+                else f"{family_char}{int(index_int/10)}mnx"
+            )
+
+            gmodule_full_name = f"CS0_{first_name}"
+
+            # now see if this gmodule exists in global_moduls
+
+            if gmodule_full_name not in global_modules:
+                _gmodule = codeModule()
+                _gmodule.close_cmd = ""
+                _gmodule.open_cmd = ""
+                _gmodule.first_name = first_name
+                _gmodule.module_type = "globals"
+                _gmodule.body = ""
+                _gmodule.code_order = current_globals.code_order
+                global_modules[gmodule_full_name] = _gmodule
+
+            # gmodule exists, add the codeline
+
+            # clean up
+            _code_line = _code_line.replace(" ", "").strip() + "\n"
+            # process is to resolve crange syntax
+            # e.g. P745..760=0
+
+            if ".." in _code_line:
+                myset = re.findall(
+                    r"([A-Z])(\d+)(?:\.\.)(\d+)\s*(?:=)\s*(.*)", _code_line
+                )[0]
+                _start = int(myset[1])
+                _end = int(myset[2]) + 1
+                if (_start > _end) or (_start < 1):
+                    raise SyntaxError(f"{_code_line}")
+
+                _dum = ""
+                for elem in range(_start, _end):
+                    _dum += (myset[0] + str(elem) + "=" + myset[3]) + "\n"
+
+                # replace the shorthand range ".." command
+                # with expanded version in source code
+                _code_line = _dum
+
+            global_modules[gmodule_full_name].body += _code_line
+
+        # 2nd pass: verify and yield global modules one by one
+        for _gmodule_name in global_modules:
+            _gmodule = global_modules[_gmodule_name]
+            # verify so that the checksum is make
+            _gmodule.verify()
+            yield _gmodule_name, _gmodule
 
     return
 
@@ -563,8 +628,6 @@ def uploadGlobals(
 
     global_module_lines = global_module.body.splitlines()
 
-    line_no = 0
-    last_code_line_no = len(global_module_lines) - 1
     this_line_no = 0
     uploaded_module_code = ""
     _code_lines = ""
@@ -578,7 +641,7 @@ def uploadGlobals(
         # use left hand side of statements as commands
         code_cmd_lines.append(src_line.split("=")[0])
 
-    while success and this_line_no < last_code_line_no:
+    while success and this_line_no < len(global_module_lines):
 
         # TODO document this: tpmac sometimes sends back the same code line with a different (by 1) line number.
         # I assume at this point that this is related to the starting line, so, try to prevent requesting overlapping
@@ -586,9 +649,12 @@ def uploadGlobals(
 
         sleep(wait_secs)
 
-        last_line_no = min(this_line_no + bunch_size, last_code_line_no)
+        last_line_no = min(this_line_no + bunch_size, len(global_module_lines))
 
-        _command_str = "\n".join(code_cmd_lines[this_line_no:last_line_no])
+        # if last_line_no == len(global_module_lines):
+        #     print("debug")
+
+        _command_str = "\n".join(code_cmd_lines[this_line_no:last_line_no]) + "\n"
 
         _code_lines, success = pmac.sendCommand(_command_str)
 
@@ -612,7 +678,7 @@ def uploadGlobals(
         #     break
 
         _up_code_list = list(
-            zip(code_cmd_lines[this_line_no:last_line_no], _code_lines.splitlines())
+            zip(code_cmd_lines[this_line_no:last_line_no], _code_lines.splitlines(),)
         )
 
         if len(_code_lines) > 0:
@@ -621,11 +687,11 @@ def uploadGlobals(
                 this_line_code = f"{_query}={_answer}"
 
                 up_code_list.append((this_line_no, this_line_code))
-                this_line_no += 1
                 added_lines.add(this_line_no)
+                this_line_no += 1
 
         else:
-            this_line_no = line_no + 1
+            this_line_no += 1
             print("empty return, terminating", end="...")
             success = False
 
