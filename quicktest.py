@@ -104,8 +104,8 @@ def download(module_full_name, code_module, default_download_choice=""):
 
     reason_for_skip = ""
 
-    if module_full_name.endswith(pm.freeCodeSuffix) and not args.download_tailing:
-        reason_for_skip = "tailings"
+    if module_full_name.endswith("globals") and not args.download_globals:
+        reason_for_skip = "globals"
 
     if not code_module.body and not args.download_blank:
         reason_for_skip = "blank"
@@ -192,7 +192,7 @@ def readYamlArgs(yaml_args_path):
     args.out_dir = run_args["out_dir"]
     args.pmac_ip = run_args["pmac_ip"]
     args.download = run_args["download"]
-    args.download_tailing = run_args["download_tailing"]
+    args.download_globals = run_args["download_globals"]
     args.download_blank = run_args["download_blank"]
     args.skip_failed_modules = run_args["skip_failed_modules"]
     args.src_file = run_args["src_file"]
@@ -257,7 +257,7 @@ stager.stage("Modularising parsed code", this_verbose_level=2)
 
 modules_dict = {}
 for module_full_name, code_module in pm.tpmacExtractModules(
-    code_source=pmc_parser.output, include_tailing=True
+    code_source=pmc_parser.output, include_globals=True
 ):
 
     if module_full_name in modules_dict:
@@ -295,17 +295,6 @@ stager.stage(
     laps_time=False,
 )
 
-# # Now, see if you can further breakdown the globals:
-# _old_rx = tpmac.vxx_rx("[iI]", 1, mode="find")
-# _matches = re.findall(_old_rx, modules_sorted["XX_&0_GLOBAL_tailing"].body)
-# print("  {} instances of {} found".format(len(_matches), _old_rx))
-
-# _matches = re.findall(
-#     tpmac.vmn_stats(tpmac.Ivar_mn_rx, "1", "2", "3"),
-#     modules_sorted["XX_&0_GLOBAL_tailing"].body,
-# )
-# print("  {} instances of {} found".format(len(_matches), _old_rx))
-
 stager.stage(f"Connecting to tpmac at {pmac_ip_address}", this_verbose_level=0)
 
 pmac1 = PmacEthernetInterface(verbose=False, numAxes=8, timeout=3)
@@ -336,13 +325,24 @@ stager.stage(
 )
 
 for module_full_name in modules_sorted:
-    if module_full_name.endswith(pm.freeCodeSuffix):
+    if module_full_name.endswith("globals"):
         # how to upload free code:
         modules_sorted[module_full_name].verified = False
+        stager.stage(
+            f"Uploading {module_full_name}", this_verbose_level=2, laps_time=False,
+        )
+        upl_code_module = pm.uploadGlobals(
+            pmac=pmac1,
+            #     module_full_name=module_full_name,
+            wait_secs=0.025,
+            global_module=modules_sorted[module_full_name],
+        )
+
     elif args.skip_failed_modules and modules_sorted[module_full_name].download_failed:
         print(f"-- skiped {module_full_name} (failed downloads)", end="\n") if (
             args.verbose > 1
         ) else ()
+        continue
     else:
         # upload module code
 
@@ -359,58 +359,58 @@ for module_full_name in modules_sorted:
 
         # code_module.__init__(body=uploaded_module_code)
 
-        uploaded_module_filename = pm.tpmacModuleFullPath(
-            suffix="upl",
-            pmac_id=pmac_ip_address,
-            module_full_name=module_full_name,
-            output_dir_path=output_dir_base,
-        )
+    uploaded_module_filename = pm.tpmacModuleFullPath(
+        suffix="upl",
+        pmac_id=pmac_ip_address,
+        module_full_name=module_full_name,
+        output_dir_path=output_dir_base,
+    )
+
+    stager.stage(
+        f"Saving uploaded code to file {uploaded_module_filename}",
+        this_verbose_level=4,
+        laps_time=False,
+    )
+
+    uploaded_module_md5 = pm.savePmacModule(
+        device_id=pmac_ip_address,
+        module_id=module_full_name.split("_", 1)[1],
+        save_filename=uploaded_module_filename,
+        code_module=upl_code_module,
+        source_id="uploaded",
+        user_time_in_header=True,
+    )
+
+    # TODO: save a catalog in the dump directory
+
+    # report dict structure:
+    # module name
+    #  .
+
+    if modules_sorted[module_full_name].checksum == uploaded_module_md5:
+        # checksums match, hooray!
+        modules_sorted[module_full_name].verified = True
+        if args.verbose > 0:
+            if len(upl_code_module.body) < 1:
+                print("blank", end="...")
+            else:
+                print("code found", end="...")
+            print("verified.")
+    else:
+        modules_sorted[module_full_name].verified = False
+        _src = modules_sorted[module_full_name].body
+        _upl = upl_code_module.body
+
+        print("**** ERROR: not verified ****") if (args.verbose > -1) else ()
+        # if args.verbose > 3:
+        #     diff_list = [li for li in difflib.ndiff(_src, _upl) if li[0] != ' ']
+        #     print(diff_list)
 
         stager.stage(
-            f"Saving uploaded code to file {uploaded_module_filename}",
-            this_verbose_level=4,
+            f"source: \n{_src} \n\n uploaded: \n{_upl} \n\n",
+            this_verbose_level=5,
             laps_time=False,
         )
-
-        uploaded_module_md5 = pm.savePmacModule(
-            device_id=pmac_ip_address,
-            module_id=module_full_name.split("_", 1)[1],
-            save_filename=uploaded_module_filename,
-            code_module=upl_code_module,
-            source_id="uploaded",
-            user_time_in_header=True,
-        )
-
-        # TODO: save a catalog in the dump directory
-
-        # report dict structure:
-        # module name
-        #  .
-
-        if modules_sorted[module_full_name].checksum == uploaded_module_md5:
-            # checksums match, hooray!
-            modules_sorted[module_full_name].verified = True
-            if args.verbose > 0:
-                if len(upl_code_module.body) < 1:
-                    print("blank", end="...")
-                else:
-                    print("code found", end="...")
-                print("verified.")
-        else:
-            modules_sorted[module_full_name].verified = False
-            _src = modules_sorted[module_full_name].body
-            _upl = upl_code_module.body
-
-            print("**** ERROR: not verified ****") if (args.verbose > -1) else ()
-            # if args.verbose > 3:
-            #     diff_list = [li for li in difflib.ndiff(_src, _upl) if li[0] != ' ']
-            #     print(diff_list)
-
-            stager.stage(
-                f"source: \n{_src} \n\n uploaded: \n{_upl} \n\n",
-                this_verbose_level=5,
-                laps_time=False,
-            )
 
 
 print(f"\noutput dumped in {output_dir_base}")
