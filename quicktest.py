@@ -64,7 +64,7 @@ def yaml_dump():
         report_module["download_attempt"] = code_module.download_attempt
         report_module["download_msg"] = code_module.download_msg
         report_module["download_failed"] = code_module.download_failed
-        # report_module["checksum"] = code_module.checksum
+        report_module["checksum"] = code_module.checksum
         report_module["type"] = code_module.module_type
         report_module["verified"] = code_module.verified
 
@@ -100,7 +100,7 @@ def yaml_dump():
         ym.safe_dump(report_dict, yamlfile, default_flow_style=False)
 
 
-def download(module_full_name, code_module):
+def download(module_full_name, code_module, dont_ask=False):
 
     reason_for_skip = ""
 
@@ -114,7 +114,11 @@ def download(module_full_name, code_module):
         reason_for_skip = "user-all"
 
     if not reason_for_skip:
-        userinp = input(f"{module_full_name} ... [S]kip/skip[A]ll/download ")
+        userinp = (
+            input(f"{module_full_name} ... [S]kip/skip[A]ll/download ")
+            if not dont_ask
+            else "D"
+        )
 
         if userinp == "A":
             download.skip_all = True
@@ -169,21 +173,53 @@ def parsing():
         raise RuntimeError("parser returned error.")
 
 
-DEBUGGING = True
+def readYamlArgs(yaml_args_path):
+    """read setup parameters and run arguments from yaml file
+
+    """
+
+    if os.path.exists(yaml_args_path):
+        with open(yaml_args_path, "r") as yamlfile:
+            run_args = ym.safe_load(yamlfile)  # Note the safe_load
+    else:
+        run_args = {}
+        raise FileNotFoundError(f"{yaml_args_path}")
+
+    if not isinstance(run_args, dict):
+        # wrong or empty yaml record
+        run_args = {}
+
+    args.out_dir = run_args["out_dir"]
+    args.pmac_ip = run_args["pmac_ip"]
+    args.download = run_args["download"]
+    args.download_tailing = run_args["download_tailing"]
+    args.download_blank = run_args["download_blank"]
+    args.skip_failed_modules = run_args["skip_failed_modules"]
+    args.src_file = run_args["src_file"]
+    args.verbose = run_args["verbose"]
+
 
 parser = ArgumentParser(description="download and analyse pmac code, by modules.")
+
 parser.add_argument(
-    "-i", "--pmac_ip", type=str, required=not DEBUGGING, help="pmac ip address"
+    "-y",
+    "--yaml_args",
+    type=str,
+    default="_local/default_args.yaml",
+    required=False,
+    help="yaml args file name",
 )
+
+parser.add_argument("-i", "--pmac_ip", type=str, required=False, help="pmac ip address")
 parser.add_argument(
     "-v", "--verbose", type=int, default=2, help="verbocity level range 0 to 4"
 )
 parser.add_argument(
-    "-s", "--src_file", type=str, required=not DEBUGGING, help="source file name"
+    "-s", "--src_file", type=str, required=False, help="source file name"
 )
 
 parser.add_argument(
-    "-o", "--out_dir", type=str, required=not DEBUGGING, help="output directory"
+    "-o", "--out_dir", type=str, required=False, help="output directory"
 )
 
 parser.add_argument(
@@ -192,30 +228,8 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+readYamlArgs(args.yaml_args)
 
-if DEBUGGING:
-    args.out_dir = str(Path.home()) + "/tcm_dump"  # use source dir
-
-    args.out_dir = "tests/_dump"  # use source dir
-
-    args.pmac_ip = "10.23.199.230"
-    # args.pmac_ip = '10.23.207.9'
-    args.download = True  # For this test file, False means just verify
-    # fix this before turning it on
-    args.download_tailing = False
-    args.download_blank = False
-    args.skip_failed_modules = True
-    args.src_file = [
-        "tests/local_test_master.pmc",
-        "/beamline/perforce/tec/mc/pmacUtil/trunk/pmc/BaseConfigNoAxes.pmc",
-        "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/WORKSHOP01_CS5_34YX.pmc",
-        "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/AS_CS_3jack_demo.pmc",
-        "/beamline/perforce/opa/int/ctrls/WORKSHOP01/Settings/app/MC-268-test.pmc",
-    ][3]
-    args.verbose = 2
-
-
-pm.args = args
 
 pmac_ip_address = args.pmac_ip
 src_full_path = args.src_file
@@ -309,7 +323,7 @@ if args.download:
     download.skip_all = False
     stager.stage("Downloading to tpmac...", this_verbose_level=0)
     for module_full_name, code_module in modules_sorted.items():
-        download(module_full_name, code_module)
+        download(module_full_name, code_module, dont_ask="A")
 
 stager.stage(
     f"Uploading listed modules from {pmac1.getPmacModel()} at {pmac_ip_address}\n",
