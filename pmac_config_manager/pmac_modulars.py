@@ -339,18 +339,24 @@ def tpmacExtractModules(code_source="", include_globals=True):
         code_line = splited_lines[0]
         code_source[i] = code_line
 
-        # find instances of &cc in the command line:
-        CS_list = re.findall(r"(?<=&)\d+", code_line)
+        # if not already in a buffer (LISTable module) then
+        if not module_full_name:
+            # find instances of &cc in the command line:
+            CS_list = re.findall(r"(?<=&)\d+", code_line)
 
-        if len(CS_list) > 0:
-            _CS = CS_list[-1]
-            _cs_number = int(_CS)
+            if len(CS_list) > 0:
+                _CS = CS_list[-1]
+                _cs_number = int(_CS)
 
-        if len(CS_list) > 1:
-            # TODO deal with multiple CS changes in a single line
-            raise RuntimeError(
-                f"unsupported syntax, multiple CS numbers in a single line : {code_line}"
-            )
+            if len(CS_list) > 1:
+                # TODO deal with multiple CS changes in a single line
+                # also deal with syntax mix that binary & creates: (10&30) is NOT
+                # defining a cs number. Inside buffered modules, & only works inside cmd
+                # So...
+                # for the moment, we will IGNORE the multiple ones and   .
+                raise RuntimeError(
+                    f"unsupported syntax, multiple CS numbers in a single line : {code_line}"
+                )
 
         module_types_to_open = re.findall(r"(?<=OPEN)\s+[A-Z]+", code_line)
         # module_types_to_close = re.findall(r"OPEN\s+[A-Z]+(?=.*CLOSE)", code_line)

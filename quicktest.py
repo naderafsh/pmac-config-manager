@@ -308,6 +308,13 @@ sleep(1)
 # pmac1.getIVars(100, [31, 32, 33])
 # pmac1.sendSeries(['ver', 'list plc3'])
 
+userinp = input("[R]est / [S]ave or continue...")
+
+if userinp == "R":
+    print(f"resetting {pmac_ip_address} ...")
+    pmac1.sendCommand("$$$", shouldWait=False)
+    pmac_reset = True
+    sleep(5)
 
 if args.download:
     download.skip_all = False
@@ -401,7 +408,7 @@ for module_full_name in modules_sorted:
         _src = modules_sorted[module_full_name].body
         _upl = upl_code_module.body
 
-        print("**** ERROR: not verified ****") if (args.verbose > -1) else ()
+        print("**** not verified ****") if (args.verbose > -1) else ()
         # if args.verbose > 3:
         #     diff_list = [li for li in difflib.ndiff(_src, _upl) if li[0] != ' ']
         #     print(diff_list)
@@ -424,17 +431,23 @@ print(f"\n\ntime lapses in seconds: {stager.time_laps}")
 
 pmac_reset = False
 pmac_saved = False
-userinp = input("[R]est / [S]ave or quit...")
+userinp = input("[R]est / [S]ave or continue...")
 
 if userinp == "R":
     print(f"resetting {pmac_ip_address} ...")
     pmac1.sendCommand("$$$", shouldWait=False)
-    pmac_saved = True
+    pmac_reset = True
     sleep(5)
 elif userinp == "S":
     print(f"saving {pmac_ip_address} ...")
     pmac1.sendCommand("sav", shouldWait=False)
+    pmac_saved = True
+    sleep(5)
+elif userinp == "$$$***":
+    print(f"erasing {pmac_ip_address} ...")
+    pmac1.sendCommand(userinp, shouldWait=False)
     pmac_reset = True
     sleep(5)
+
 
 yaml_dump()
