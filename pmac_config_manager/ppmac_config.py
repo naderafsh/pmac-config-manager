@@ -24,6 +24,9 @@ def isPmacNumber(s: str):
 
 
 def ppmacFindAssociates(module_settings, exclusions=[]):
+    """ Finds the set of parameters 
+    which are being addressed on the right side of statements included in module_settings """
+
     assert isinstance(module_settings, set)
     # assert isinstance(module_settings[0], tuple)
     # assert len(module_setting) == 2) for module_settings in module_settings
@@ -59,59 +62,75 @@ def ppmacFindSettings(modules: set, code_source="", deindex=True):
 
 
 def ppmacExtractModules(
-    code_source="", include_tailing=True, motor_index=None, deindex=True
+    code_source="", include_tailing=True, motor_index=None, deindex=True, include_companion=True,
 ):
 
-    linecomment_prefix = "//"
+    _cmt_ = "//"
 
-    # start by extracting direct Motor[i] settings
-    reg_str = rf"(?:\s*)(Motor\[{motor_index}\]\.\S*)(?:\s*=\s*)(.*)"
-    motor_settings = set(re.findall(reg_str, code_source, flags=re.IGNORECASE))
+    gate_index = 0 if motor_index < 5 else 1
+    chan_index = motor_index - gate_index * 4 - 1
+    companion_index = motor_index + 8
+    enctable_index = motor_index
+    comp_enctable_index = companion_index
+    # find L1 as Motor index
+    index_settings = [
+        ("L1", f"{motor_index} {_cmt_}Motor[{motor_index}]"),
+        ("L2", f"{gate_index} {_cmt_}PowerBrick[{gate_index}]"),
+        ("L3", f"{chan_index} {_cmt_}Chan[{chan_index}]"),
+        ("L4", f"L2 {_cmt_} {_cmt_} secondary gate"),
+        ("L5", f"L3 {_cmt_} {_cmt_} secondary chan"),
+        ("L6", f"L1 - 1 {_cmt_} {_cmt_} motor addressed from 0"),
+        ("L7", f"{companion_index} {_cmt_}Motor[{companion_index}] {_cmt_} companion axis"),
+        ("L8", f"{enctable_index} {_cmt_}EncTable[{enctable_index}]"),
+        ("L9", f"{comp_enctable_index} {_cmt_}EncTable[{comp_enctable_index}] {_cmt_} companion encoder table"),
+    ]
 
-    # then look for its correspondends, via right-hand associations
-    # reg_str = rf"(?:Motor\[{motor_index}\])(?:\.)(?:\S*)(?:\s*=\s*)(.*\[.*)"
-    # associate_instances = re.findall(reg_str, code_source, flags=re.IGNORECASE)
-    #
 
-    associates = ppmacFindAssociates(
-        motor_settings, exclusions=["Sys.pushm", f"Motor[{motor_index}]"]
-    )
+    def extractMotorSettings(motor_index):
+        # start by extracting direct Motor[i] settings
+        reg_str = rf"(?:\s*)(Motor\[{motor_index}\]\.\S*)(?:\s*=\s*)(.*)"
+        motor_settings = set(re.findall(reg_str, code_source, flags=re.IGNORECASE))
 
-    # extract the associate settings
-    associate_settings = ppmacFindSettings(modules=associates, code_source=code_source)
+        # then look for its correspondends, via right-hand associations
+        # reg_str = rf"(?:Motor\[{motor_index}\])(?:\.)(?:\S*)(?:\s*=\s*)(.*\[.*)"
+        # associate_instances = re.findall(reg_str, code_source, flags=re.IGNORECASE)
+        #
 
-    # check second hand dependencies
-    associates_of_associates = ppmacFindAssociates(
-        associate_settings, exclusions=["Sys.pushm", f"Motor[{motor_index}]"]
-    )
+        # find right side associated parameters
+        associates = ppmacFindAssociates(
+            motor_settings, exclusions=["Sys.pushm", f"Motor[{motor_index}]"]
+        )
 
-    if len(associates_of_associates) > 0:
-        # this is problematic. There might be some circular references
+        # extract the setting statements assigning to the associates
+        associate_settings = ppmacFindSettings(modules=associates, code_source=code_source)
 
-        if not associates_of_associates.issubset(associates):
+        # check second hand dependencies
+        associates_of_associates = ppmacFindAssociates(
+            associate_settings, exclusions=["Sys.pushm", f"Motor[{motor_index}]"]
+        )
 
-            print(f"Unexpected dependency: {associates_of_associates}")
+        if len(associates_of_associates) > 0:
+            # this is problematic. There might be some circular references
 
+            if not associates_of_associates.issubset(associates):
+
+                print(f"Unexpected dependency: {associates_of_associates}")
+        
+        return motor_settings, associate_settings
+
+    motor_settings, associate_settings = extractMotorSettings(motor_index)
+    
     axis_settings = motor_settings
     axis_settings.update(associate_settings)
 
+    if include_companion:
+        comp_motor_settings, comp_associate_settings = extractMotorSettings(companion_index)
+        axis_settings.update(comp_motor_settings)
+        axis_settings.update(comp_associate_settings)
+
+
     # if deindex, then set
     if deindex:
-        gate_index = 0 if motor_index < 5 else 1
-        chan_index = motor_index - gate_index * 4 - 1
-        companion_index = motor_index + 8
-        enctable_index = motor_index
-        # find L1 as Motor index
-        index_settings = [
-            ("L1", f"{motor_index} //Motor[{motor_index}]"),
-            ("L2", f"{gate_index} //PowerBrick[{gate_index}]"),
-            ("L3", f"{chan_index} //Chan[{chan_index}]"),
-            ("L4", "L2 // secondary gate"),
-            ("L5", "L3 // secondary chan"),
-            ("L6", "L1 - 1 // motor addressed from 0"),
-            ("L7", f"{companion_index} // companion axis {companion_index}"),
-            ("L8", f"{enctable_index} //EncTable[{enctable_index}]"),
-        ]
 
         # replace instances of Motor[]
 
@@ -119,11 +138,15 @@ def ppmacExtractModules(
 
             # insert index value at top
 
-            _find = index_setting[1].split(linecomment_prefix)[1]
+            _find = index_setting[1].split(_cmt_)[1].strip()
+            if not _find:
+                continue
             _replace = _find.replace(
-                f"[{index_setting[1].split(linecomment_prefix)[0].strip()}]",
+                f"[{index_setting[1].split(_cmt_)[0].strip()}]",
                 f"[{index_setting[0]}]",
             )
+
+            #print(f"{_find} -> {_replace}")
 
             axis_settings = [
                 (

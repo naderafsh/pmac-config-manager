@@ -7,10 +7,9 @@ from pathlib import Path
 
 from hashlib import md5
 from time import sleep, time
-from collections import OrderedDict
 
 
-freeCodeSuffix = "_tailing"
+freeCodeSuffix = "_globals"
 
 cs_module_types = ["INVERSE", "FORWARD"]
 
@@ -28,6 +27,8 @@ class codeModule:
     download_failed = ...  # type: bool
     verified = ...  # type: bool
     module_type = ...  # type: str
+    download_attempt = ...  # type: bool
+    download_msg = ...  # type: str
 
     def __init__(
         self,
@@ -57,6 +58,8 @@ class codeModule:
 
         self.verified = False
         self.download_failed = False
+        self.download_attempt = False
+        self.download_msg = ""
 
         self.setBody(body)
 
@@ -70,7 +73,7 @@ class codeModule:
             self.module_type = self.first_name
             self.module_sp = ""
             self.open_cmd = f"&{cs_id}A OPEN {self.module_type} CLEAR\n"
-            self.close_cmd = f"CLOSE\n"
+            self.close_cmd = "CLOSE\n"
         else:
             self.setFromCodeLine(code_line="OPEN " + first_name, _CS=cs_id)
 
@@ -84,7 +87,7 @@ class codeModule:
         if self.module_type in cs_module_types:
             self.module_sp = ""
             self.open_cmd = f"&{_CS}A OPEN {self.module_type} CLEAR\n"
-            self.close_cmd = f"CLOSE\n"
+            self.close_cmd = "CLOSE\n"
         # module is not CS dependent
         else:
             # need a number to specify the module
@@ -95,10 +98,10 @@ class codeModule:
                     self.open_cmd = (
                         f"A OPEN {self.module_type} {self.module_sp} CLEAR\n"
                     )
-                    self.close_cmd = f"CLOSE\n"
+                    self.close_cmd = "CLOSE\n"
                 else:
                     self.open_cmd = f"DISABLE {self.module_type} {self.module_sp} OPEN {self.module_type} {self.module_sp} CLEAR\n"
-                    self.close_cmd = f"CLOSE\n"
+                    self.close_cmd = "CLOSE\n"
             else:
                 raise RuntimeError(f"ERROR: unspecified module name: {code_line}")
 
@@ -138,7 +141,6 @@ def stripRgx(text, rgx_to_strip=" +", exclude_quote='"'):
 def stripInBrackets(_src, brackets="()", to_strip=" \n\t\r"):
     """
     removes all white-spaces within brackets
-    
     """
 
     # TODO make this hack code pythonic
@@ -158,7 +160,6 @@ def stripInBrackets(_src, brackets="()", to_strip=" \n\t\r"):
 def tpmcBufferSyntax(src):
     """
     modifies syntax of the script to match the tpmac stored code as retreives using List command
-    
     """
 
     resevered_words = r"[\>,\<,\!,\(,\),=,+,\-,*,/,\n]"
@@ -179,13 +180,13 @@ def tpmcBufferSyntax(src):
         ("GOSUB", "GOS"),
         ("GOTO", "GOT"),
         ("OR", "OR"),
-        ("RETURN", "RET "),
+        ("RETURN", "RET"),
         ("WHILE", "WHILE"),
     ]
     # remove buffer commands from source
     src = re.sub(r"clear\s", "", src, flags=re.IGNORECASE)
 
-    ## trim extra tabs and spaces
+    # trim extra tabs and spaces
 
     # add a dumy line to ensure regex searches find keywords. remoe it at the end.
     src = "\t" + src
@@ -193,7 +194,7 @@ def tpmcBufferSyntax(src):
     src = stripRgx(src, rgx_to_strip=" +")
     # reduce repeated tabs and spaces to single spaces
     src = re.sub(r"[\t, ]{2,}", " ", src, flags=re.IGNORECASE)
-    # remove tabs and spaces tailing reserved words
+    # remove tabs and spaces globals reserved words
     src = re.sub(r"(?<=" + resevered_words + ")[\t, ]", "", src, flags=re.IGNORECASE)
     # remove tabs and spaces leading reserved words
     src = re.sub(r"[\t, ](?=" + resevered_words + ")", "", src, flags=re.IGNORECASE)
@@ -303,23 +304,17 @@ def tpmacModuleFullPath(
     )
 
 
-
-
-def tpmacExtractModules(code_source="", include_tailing=True):
-
-    PPMAC_TEST_MODE = False
-
-    if PPMAC_TEST_MODE:
-        linecomment_prefix = "//"
-    else:
-        linecomment_prefix = ";"
-
+def tpmacExtractModules(code_source="", include_globals=True):
     module_full_name = None
     _cs_number = 0  # not selected
     code_order = 0
     _CS = None
-    global_full_name = "CS0_GLOBAL" + freeCodeSuffix
-    current_global = codeModule()
+    global_full_name = "CS0" + "_" + "globals"
+    current_globals = codeModule()
+    current_globals.module_type = "globals"
+    current_globals.open_cmd = ""
+    current_globals.close_cmd = ""
+
     for i, code_line in enumerate(code_source):
         if len(code_line) < 1:
             continue
@@ -345,21 +340,24 @@ def tpmacExtractModules(code_source="", include_tailing=True):
         code_line = splited_lines[0]
         code_source[i] = code_line
 
-        if code_line.startswith(linecomment_prefix):
-            continue
+        # if not already in a buffer (LISTable module) then
+        if not module_full_name:
+            # find instances of &cc in the command line:
+            CS_list = re.findall(r"(?<=&)\d+", code_line)
 
-        # find instances of &cc in the command line:
-        CS_list = re.findall(r"(?<=&)\d+", code_line)
+            if len(CS_list) > 0:
+                _CS = CS_list[-1]
+                _cs_number = int(_CS)
 
-        if len(CS_list) > 0:
-            _CS = CS_list[-1]
-            _cs_number = int(_CS)
-
-        if len(CS_list) > 1:
-            # TODO deal with multiple CS changes in a single line
-            raise RuntimeError(
-                f"unsupported syntax, multiple CS numbers in a single line : {code_line}"
-            )
+            if len(CS_list) > 1:
+                # TODO deal with multiple CS changes in a single line
+                # also deal with syntax mix that binary & creates: (10&30) is NOT
+                # defining a cs number. Inside buffered modules, & only works inside cmd
+                # So...
+                # for the moment, we will IGNORE the multiple ones and   .
+                raise RuntimeError(
+                    f"unsupported syntax, multiple CS numbers in a single line : {code_line}"
+                )
 
         module_types_to_open = re.findall(r"(?<=OPEN)\s+[A-Z]+", code_line)
         # module_types_to_close = re.findall(r"OPEN\s+[A-Z]+(?=.*CLOSE)", code_line)
@@ -388,7 +386,7 @@ def tpmacExtractModules(code_source="", include_tailing=True):
             else:
                 module_full_name = f"CS{str(0)}_{current_module.first_name}"
 
-            # reset module and tailings code
+            # reset module and globals code
             source_module_code = ""
 
             # There is only one global, not a current global
@@ -421,14 +419,86 @@ def tpmacExtractModules(code_source="", include_tailing=True):
                 source_module_code += code_line + "\n"
             else:
                 # non-module settings all go to
-                current_global.body += code_line + "\n"
-                current_global.code_order = code_order
+                # check if this is a setting
+                # simplest check is if it contains "="  .
+                if "=" in code_line:
+                    current_globals.body += code_line + "\n"
+                    current_globals.code_order = code_order
+                else:
+                    pass
+                    # all other code are ignored!!!
+                    # e.g. -> definitions, etc   .
 
-    # return _tailing module if needed
-    if include_tailing and global_full_name:
-        # verify so that the checksum is make
-        current_global.verify()
-        yield global_full_name, current_global
+    # return _globals module if needed
+    if include_globals and global_full_name:
+        # now extract gloabal modules
+        # from within globals, like I1xx and Pxxx.
+
+        global_modules = {}
+
+        for _code_line in current_globals.body.splitlines():
+            _left_side = _code_line.split("=")[0]
+            myset = re.findall(r"([A-Z])(\d+)", _left_side)[0]
+            family_char = myset[0]
+            index_int = int(int(myset[1]) / 100)
+
+            # if index_int > 49:
+            #     # these are I5sx, I7mnx and I8mxx
+            #     # collate all of them under 50, 60, 70, 80 and 90
+            #     index_int =  * 10int(index_int / 10)
+
+            first_name = (
+                f"{family_char}{index_int}xx"
+                if (index_int < 50) or (family_char != "I")
+                else f"{family_char}{int(index_int/10)}mnx"
+            )
+
+            gmodule_full_name = f"CS0_{first_name}"
+
+            # now see if this gmodule exists in global_moduls
+
+            if gmodule_full_name not in global_modules:
+                _gmodule = codeModule()
+                _gmodule.close_cmd = ""
+                _gmodule.open_cmd = ""
+                _gmodule.first_name = first_name
+                _gmodule.module_type = "globals"
+                _gmodule.body = ""
+                _gmodule.code_order = current_globals.code_order
+                global_modules[gmodule_full_name] = _gmodule
+
+            # gmodule exists, add the codeline
+
+            # clean up
+            _code_line = _code_line.replace(" ", "").strip() + "\n"
+            # process is to resolve crange syntax
+            # e.g. P745..760=0
+
+            if ".." in _code_line:
+                myset = re.findall(
+                    r"([A-Z])(\d+)(?:\.\.)(\d+)\s*(?:=)\s*(.*)", _code_line
+                )[0]
+                _start = int(myset[1])
+                _end = int(myset[2]) + 1
+                if (_start > _end) or (_start < 1):
+                    raise SyntaxError(f"{_code_line}")
+
+                _dum = ""
+                for elem in range(_start, _end):
+                    _dum += (myset[0] + str(elem) + "=" + myset[3]) + "\n"
+
+                # replace the shorthand range ".." command
+                # with expanded version in source code
+                _code_line = _dum
+
+            global_modules[gmodule_full_name].body += _code_line
+
+        # 2nd pass: verify and yield global modules one by one
+        for _gmodule_name in global_modules:
+            _gmodule = global_modules[_gmodule_name]
+            # verify so that the checksum is make
+            _gmodule.verify()
+            yield _gmodule_name, _gmodule
 
     return
 
@@ -454,10 +524,10 @@ def downloadCodeLines(pmac=None, module_code=[], section_size=1):
     """
     downloads pmac script to pmac
 
-    the script is devided into sections of section_size and sent to the pmac using sendCommand 
+    the script is devided into sections of section_size and sent to the pmac using sendCommand
 
-    this was an attempt to use sendSeries. It frequently fails to write into buffers returning ERR005, indicating buffer gets closed while downloading.
-    
+    this was an attempt to use sendSeries. It frequently fails to write into buffers returning ERR005,
+    indicating buffer gets closed while downloading.
     """
     code_lines = module_code.splitlines(True)
     code_sections = []
@@ -498,10 +568,10 @@ def downloadCodeLinesOBS(pmac=None, module_code=[], section_size=20):
     """
     downloads pmac script to pmac
 
-    the script is devided into sections of section_size and sent to the pmac using sendCommand 
+    the script is devided into sections of section_size and sent to the pmac using sendCommand
 
     using sendCommand for sections, its 3x faster but sometimes code chunks get missing from download
-    
+
     """
     code_lines = module_code.splitlines(True)
     code_sections = []
@@ -531,6 +601,9 @@ def downloadCodeLinesOBS(pmac=None, module_code=[], section_size=20):
 
 
 def downloadModule(pmac=None, code_module=codeModule()):
+    """downloads a code module body.
+    for non LIST able free settings code_module.open_cmd and code_module.close_cmd shall be blank
+    """
 
     # send open commands
     return_message, success = downloadCodeLines(pmac, code_module.open_cmd)
@@ -547,9 +620,123 @@ def downloadModule(pmac=None, code_module=codeModule()):
     return return_message.strip("\r"), success, close_msg, closedSuccessfully
 
 
+def uploadGlobals(
+    pmac,
+    # module_full_name,
+    global_module: codeModule,
+    wait_secs=0.15,
+    bunch_size=10,
+    end_code="ERR003",
+):
+
+    """uploads LIST able module using full name"""
+
+    # _CS, module_first_name = pmacModuleName(module_full_name)
+
+    global_module_lines = global_module.body.splitlines()
+
+    this_line_no = 0
+    uploaded_module_code = ""
+    _code_lines = ""
+    success = True
+    up_code_list = []
+    added_lines = set()
+    upload_error = None
+
+    code_cmd_lines = []
+    for src_line in global_module_lines:
+        # use left hand side of statements as commands
+        code_cmd_lines.append(src_line.split("=")[0])
+
+    while success and this_line_no < len(global_module_lines):
+
+        # TODO document this: tpmac sometimes sends back the same code line with a different (by 1) line number.
+        # I assume at this point that this is related to the starting line, so, try to prevent requesting overlapping
+        # ranges
+
+        sleep(wait_secs)
+
+        last_line_no = min(this_line_no + bunch_size, len(global_module_lines))
+
+        # if last_line_no == len(global_module_lines):
+        #     print("debug")
+
+        _command_str = "\n".join(code_cmd_lines[this_line_no:last_line_no]) + "\n"
+
+        _code_lines, success = pmac.sendCommand(_command_str)
+
+        if not success:
+            upload_error = _code_lines
+            break
+
+        # TODO: check if uppercase for all
+        # uplpoaded code is not problematic
+        _code_lines = _code_lines.upper()
+        _code_lines = re.sub(r"\r", "\n", _code_lines, flags=re.IGNORECASE)
+
+        # and remove the RET at the end of the buffer
+        if _code_lines.endswith("\x06"):
+            _code_lines = _code_lines[:-1]
+
+        if _code_lines.endswith("\n"):
+            _code_lines = _code_lines[:-1]
+        # if _code_lines.endswith(end_code):
+        #     upload_error = None
+        #     break
+
+        _up_code_list = list(
+            zip(code_cmd_lines[this_line_no:last_line_no], _code_lines.splitlines(),)
+        )
+
+        if len(_code_lines) > 0:
+            for (_query, _answer) in _up_code_list:
+                # check if the line starts with a line number
+                this_line_code = f"{_query}={_answer}"
+
+                up_code_list.append((this_line_no, this_line_code))
+                added_lines.add(this_line_no)
+                this_line_no += 1
+
+        else:
+            this_line_no += 1
+            print("empty return, terminating", end="...")
+            success = False
+
+    # remove empty lines
+    up_code_list = [item for item in up_code_list if len(item[1]) > 0]
+
+    if len(up_code_list) > 0:
+        uploaded_module_code = "\n".join(list(zip(*up_code_list))[1]) + "\n"
+    else:
+        uploaded_module_code = ""
+
+    # catch errors
+    if not success:
+        print("Comms Error", end="...")
+
+    if upload_error:
+        print(f"Error {upload_error}", end="...")
+
+    elif uploaded_module_code[-40:-1].endswith(r"WARNING: response truncated."):
+        print(
+            "Buffer is truncated, received {} bytes".format(len(uploaded_module_code)),
+            end="...",
+        )
+
+    # now put the loaded code into a code module
+    code_module = codeModule(body=uploaded_module_code)
+    code_module.module_type = "globals"
+    code_module.open_cmd = ""
+    code_module.close_cmd = ""
+
+    return code_module
+
+
 def uploadModule(
     pmac, module_full_name, wait_secs=0.15, bunch_size=100, end_code="ERR003"
 ):
+
+    """uploads LIST able module using full name"""
 
     _CS, module_first_name = pmacModuleName(module_full_name)
 
@@ -579,7 +766,9 @@ def uploadModule(
             upload_error = _code_lines
             break
 
-        _code_lines = _code_lines[:-1]
+        # TODO: check if uppercase for all
+        # uplpoaded code is not problematic
+        _code_lines = _code_lines[:-1].upper()
         _code_lines = re.sub(r"\r", "\n", _code_lines, flags=re.IGNORECASE)
         # and remove the RET at the end of the buffer
         if _code_lines.endswith("RET\n"):
