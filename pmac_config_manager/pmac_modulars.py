@@ -126,6 +126,29 @@ class codeModule:
         return True
 
 
+def removeLeadingZeros(src):
+    """    
+    removes all leading zeros from constants, including hex numbers e.g. P0050->P50
+    BUT dose't remove zeros from within hex numbers e.g. $000C0800 -> $C0800
+
+    Args:
+        src ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
+
+    rgx_dec_leading_zeros = r"(?<![\dA-F.])0+(?=[\d+])"
+    src = re.sub(rgx_dec_leading_zeros, "", src, flags=re.IGNORECASE)
+
+    rgx_hex_leading_zeros = (
+        r"(?<=[$])((?<![\dA-F.])0+(?=[\dA-F+]))"  # r"[$]((?<![\dA-F.])0+(?=[\dA-F+]))"
+    )
+    src = re.sub(rgx_hex_leading_zeros, "", src, flags=re.IGNORECASE)
+
+    return src
+
+
 def stripRgx(text, rgx_to_strip=" +", exclude_quote='"'):
     """
     strips what specified as rgx_to_strip, leaving intances inside quotes intact
@@ -207,8 +230,7 @@ def tpmcBufferSyntax(src):
     src = re.sub(r"(?<=\WN\d{2})\s+", "", src)
     src = re.sub(r"(?<=\WN\d{3})\s+", "", src)
 
-    # remove leading zeros from constants
-    src = re.sub(r"(?<![\d.])0+(?=\d+)", "", src, flags=re.IGNORECASE)
+    src = removeLeadingZeros(src)
 
     # replace long forms with shorthands
     for _find, _replace in src_whole_shorthands:
@@ -495,8 +517,10 @@ def tpmacExtractModules(code_source="", include_globals=True):
 
         # 2nd pass: verify and yield global modules one by one
         for _gmodule_name in global_modules:
-            _gmodule = global_modules[_gmodule_name]
-            # verify so that the checksum is make
+            _gmodule = global_modules[_gmodule_name]  # type: codeModule
+            # remove leading zeros
+            _gmodule.setBody(removeLeadingZeros(_gmodule.body))
+            # verify so that the checksum is added
             _gmodule.verify()
             yield _gmodule_name, _gmodule
 
