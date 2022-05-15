@@ -120,10 +120,12 @@ def ppmacExtractModules(
 
     motor_settings, associate_settings = extractMotorSettings(motor_index)
     
+    print(f"collecting axis {motor_index}")
     axis_settings = motor_settings
     axis_settings.update(associate_settings)
 
     if include_companion:
+        print(f"including companion axis {companion_index}")
         comp_motor_settings, comp_associate_settings = extractMotorSettings(companion_index)
         axis_settings.update(comp_motor_settings)
         axis_settings.update(comp_associate_settings)

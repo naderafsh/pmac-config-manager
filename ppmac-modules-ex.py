@@ -1,4 +1,5 @@
 #!
+from collections import defaultdict
 from os import path
 from pmac_config_manager import ppmac_config as pm
 from pmac_config_manager import stager as st
@@ -25,11 +26,15 @@ stager.stage(
 
 with open(src_full_path, "r") as f:
     ppmac_script = f.read()
-    f.close()
 
-stager.stage(f"Modularising ppmac code...", this_verbose_level=1)
 
-for i in [1, 2, 3, 4, 5, 6, 7, 8]:
+for i in range(16):
+
+    stager.stage(
+        f"\nmotor_{i} settings",
+        this_verbose_level=2,
+        laps_time=True, print_end=":\n"
+    )
 
     axis_settings_list = pm.ppmacExtractModules(
         code_source=ppmac_script, include_tailing=True, motor_index=i, deindex=True,
@@ -41,15 +46,9 @@ for i in [1, 2, 3, 4, 5, 6, 7, 8]:
 
     out_full_name = path.join(src_path, f"{src_filename.rsplit('.')[0]}.motor_{i}.cfg")
 
-    stager.stage(
-        f"\nmotor_{i} config saving.------------ \n\n",
-        this_verbose_level=2,
-        laps_time=True,
-    )
-
+    print(f"saving in {out_full_name}")
     with open(out_full_name, "w+") as f:
         f.write(axis_config_script)
-        f.close()
 
 
 stager.stage(f"Done.", this_verbose_level=0)

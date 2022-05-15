@@ -17,7 +17,7 @@ class stager:
         self.verbose_levels = []
         self.print_close = default_close
 
-    def stage(self, fstring=None, this_verbose_level=1, times=None, laps_time=True):
+    def stage(self, fstring=None, this_verbose_level=1, times=None, laps_time=True, print_end=""):
 
         # new stage
 
@@ -43,7 +43,12 @@ class stager:
                 self.time_laps = []
 
         if this_verbose_level <= self.verbose_level:
-            print(fstring, end=self.print_end)
+        
+            if not print_end:
+                print(fstring, end=self.print_end)
+            else:
+                print(fstring, end=print_end)
+
 
         return True
 
